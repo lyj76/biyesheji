@@ -1,0 +1,9 @@
+function Output = Clipping(Input, Ratio)
+RmsInput = (mean((Input(:)).^2))^0.5;
+Ratio = 10^(Ratio/10); 
+% Ratio = 10^(Ratio/20);%%%
+MaxAmp =  RmsInput*Ratio;
+MinAmp = - RmsInput*Ratio;
+Output = Input; 
+Output(Input<MinAmp) = MinAmp;
+Output(Input>MaxAmp) = MaxAmp;
