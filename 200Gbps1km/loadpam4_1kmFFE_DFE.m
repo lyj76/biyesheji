@@ -136,10 +136,10 @@ for n1 = 1 : length(file_list)
         % 请根据需要取消注释对应的行，一次只能运行一个算法
         
         % 1. 纯线性 FFE (Linear FFE)
-        [hffe,ye] = FFE_2pscenter(xRx,xTx,NumPreamble_TDE,N1,0.9999); 
+        %[hffe,ye] = FFE_2pscenter(xRx,xTx,NumPreamble_TDE,N1,0.9999); 
         
         % 2. Volterra 非线性 FFE (VNLE)
-        % [hffe,ye] = VNLE2_2pscenter(xRx,xTx,NumPreamble_TDE,N1,N2,0.9999,WL);
+         %[hffe,ye] = VNLE2_2pscenter(xRx,xTx,NumPreamble_TDE,N1,N2,0.9999,WL);
         
         % 3. 线性 FFE + 线性 DFE (Linear FFE + DFE)
         % [hffe,hdfe,ye] = LE_FFE2ps_centerDFE_new(xRx,xTx,NumPreamble_TDE,N1,D1,0.9999,M,M/2);  
@@ -151,8 +151,12 @@ for n1 = 1 : length(file_list)
         % [BER_clut, ye] = CLUT_VDFE_Implementation(xRx, xTx, NumPreamble_TDE, N1, N2, D1, D2, WL, WD, M, K_Lin, K_Vol, 0.9999);
 
         % 6. FNN (前馈神经网络) - 新增
-        % 参数: InputLength=101 (匹配 FFE 长度), HiddenSize=64 (增加容量), LR=0.001, Epochs=30
         % [ye_valid, net, valid_idx] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, 101, 64, 0.001, 30);
+
+        % 7. RNN (循环神经网络 - GRU/LSTM) - 新增
+        % 参数: InputLength=101, HiddenSize=32 (RNN更高效), LR=0.001, Epochs=30
+        % 给定 delay 候选 [8, 10]，让 File 1 和 File 2 各取所需
+       [ye, net, valid_idx] = RNN_Implementation(xRx, xTx, NumPreamble_TDE, 41, 64, 0.001, 15, 2, [8 10], [1 2]);
 
         %% 兼容性处理 (适配 FFE/VNLE 和 FNN 的不同输出格式)
         if exist('ye', 'var') && ~exist('ye_valid', 'var')
