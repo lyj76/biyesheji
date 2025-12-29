@@ -1,25 +1,40 @@
-%% pam
-clear;
+function results = loadpam4_1kmFFE_DFE(dataFiles)
+%% PAM-4 仿真与实测数据验证入口
+% 默认读取 rop3dBm_1.mat 与 rop5dBm_1.mat，生成 BER/SNR 结果并绘图
+
 close all;
 
+baseDir = fileparts(mfilename('fullpath'));
+addpath(genpath(fullfile(baseDir,'fns')));
+
+if nargin < 1 || isempty(dataFiles)
+    dataFiles = {fullfile(baseDir,'rop3dBm_1.mat'), fullfile(baseDir,'rop5dBm_1.mat')};
+else
+    dataFiles = cellstr(dataFiles);
+    for idx = 1:numel(dataFiles)
+        if ~isfile(dataFiles{idx})
+            candidate = fullfile(baseDir, dataFiles{idx});
+            if isfile(candidate)
+                dataFiles{idx} = candidate;
+            end
+        end
+    end
+end
+
 %% parameters
-Ft =200e9;   
+Ft = 200e9;   %#ok<NASGU> % 采样率仅用于可选的谱分析
 Osamp_factor = 2;
 NumSymbols = 2^18;
-NumPreamble = 0;            
-NumSym_total = NumSymbols+NumPreamble;
-M = 4;                                                                                      
- 
-s = RandStream.create('mt19937ar', 'seed',529558);
-prevStream = RandStream.setGlobalStream(s);
+M = 4;
+
+randStream = RandStream('mt19937ar', 'Seed', 529558);
+prevStream = RandStream.setGlobalStream(randStream);
 
 %% MQAM modulate
-[xsym, xm] = PAMSource(M,NumSymbols);
+[xsym, xm] = PAMSource(M, NumSymbols);
 xs = xm;
-% xs(find(xs==3))=3;
-%  figure;plot(xs(:),'o');grid on;
-%% pluse shaping
 
+%% pluse shaping
 rolloff = 0.1;
 N = 128;
 h = fdesign.pulseshaping(Osamp_factor,'Raised Cosine','N,Beta',N,rolloff);
@@ -28,138 +43,123 @@ sqrt_ht = Hd.Numerator;
 sqrt_ht = sqrt_ht./max(sqrt_ht);
 x_upsamp = upsample(xs,Osamp_factor);%upsampling
 x_shape = conv(sqrt_ht,x_upsamp);
-x_shape =x_shape ./ sqrt(mean(abs(x_shape).^2));
+x_shape = x_shape ./ sqrt(mean(abs(x_shape).^2));
 
+tapLength = 111;
+lambda = 0.9999;
+defaultPreamble = 10000;
 
+results = repmat(struct('label','', 'ber', NaN, 'snrDb', NaN, ...
+    'ser', NaN, 'numTraining', NaN, 'numSamples', NaN, 'dataPath', '', 'figure', []), numel(dataFiles), 1);
 
-% load('all1km.mat')
-NN=101;
-% NN=11;
-% NN=3:2:25;
-% NN=11:10:201;
-% Numdata=15;
-% Ndata=[7,10,13,1,12,14,6,9,4,11];%btb rop=5
-% Ndata=[6,9,10,7,1,8,2,4,5,11];%1km rop=5
-Ndata=6;
-% BERall=zeros(Numdata,length(NN))  ;
-% for n1=1:Numdata
-BERall=zeros(length(Ndata),length(NN))  ;
-for n1=1:length(Ndata)
-% for n1=3:3
-if 0
+for n1 = 1:numel(dataFiles)
+    dataPath = dataFiles{n1};
+    if ~isfile(dataPath)
+        warning('数据文件 %s 不存在，已跳过。', dataPath);
+        continue;
+    end
 
+    dataStruct = load(dataPath);
+    if isfield(dataStruct, 'ReData')
+        ReData = dataStruct.ReData;
+    else
+        error('文件 %s 中未找到 ReData 变量。', dataPath);
+    end
 
-DSO160G
-ReData = resample(channel1data6(2,:),100,160);
-ReData = ReData-mean(ReData);
+    % 保持与原始脚本一致的符号方向
+    ReData = -double(ReData(:));
 
-end          
+    %% synchronization
+    th = 0.3;
+    [TE, ~] = TEFEMMM2(ReData,1024,th);
+    ysync = ReData(1024+20+TE:end);
 
+    available = min(length(ysync), length(x_shape));
+    ysync = ysync(1:available);
 
-n1
-load(['rop5dBm_' num2str(Ndata(n1))],'ReData')
+    if length(ysync) <= N
+        warning('数据 %s 可用长度不足，无法完成滤波。', dataPath);
+        continue;
+    end
 
-% close all
-% close all
-ReData=-ReData;
-%% synchronization
-th = 0.3;
-[TE,FE] = TEFEMMM2(ReData,1024,th);
-abc = TE+0;
-% abc = 100+0+0;
-TE =abc;
-ysync = ReData(1024+20+TE:end); 
-ysync = ysync(1:length(x_shape));
+    %% Match filtering
+    yt_filter = ysync(1+N/2:length(ysync)-N/2);
 
+    %% RLS LE/NE
+    effectiveLength = min(length(yt_filter), length(xs));
+    xTx = xs(1:effectiveLength);
+    xRx = yt_filter(1:effectiveLength);
 
-for m1 = 1:length(NN)
+    NumPreamble_TDE = min(defaultPreamble, floor((effectiveLength-1)/2));
+    if NumPreamble_TDE < 10
+        warning('数据 %s 的训练序列过短（%d），已跳过。', dataPath, NumPreamble_TDE);
+        continue;
+    end
 
-%% Match filtering
-% yt_filter = ysync(1:end);
-yt_filter = ysync(1+N/2:length(ysync)-N/2);
-% % yt_filter = conv(sqrt_ht,ysync);
-% yt_filter = ysync(1+N/2:length(ysync)-N/2);
-% figure;pwelch(yt_filter(:),[],[],[],Ft,'twosided');
+    [hffe,ye] = FFE_2pscenter(xRx,xTx,NumPreamble_TDE,tapLength,lambda); %#ok<NASGU>
 
-%% RLS LE/NE
-% if 1
-    xTx = xs;
-    xRx = yt_filter;
-    NumPreamble_TDE = 10000;
-    
-    N1 = 111; %98
-    N2 = 21;%%78
-    WL= 1;%%13
-    N3 = 11;%%78
-    
+    %% Normalize
+    ym = Normalizepam(ye,M);
 
+    %% MQAM demodulation
+    ysym = dePAMSource(M,ym);
 
-% P=500; % P=500 for S-IWDFE
-% sp=;
-sp=0;
-% P=535;
-% P=280;
-% sp=75;
+    %% BER/SNR
+    refSym = xsym(1:length(ysym));
+    validRange = NumPreamble_TDE+1:length(ysym);
 
-    D1 = 25; %%26
-    D2 = 0;%%18
-     WD=1;%%9.
+    [~, BER_sub1] = biterr(ysym(validRange), refSym(validRange), log2(M));
+    [~, SER_sub1] = symerr(ysym(validRange), refSym(validRange));         
+    [SNRdB_sub1, ~] = snr( xTx(validRange), ym(validRange) );
 
-     
-aa=0.3;
-bb=1;
+    ytemp = ym(validRange);
+    idealLevels = unique(xs);
 
+    fig = figure('Name', sprintf('%s Equalization', dataPath), 'NumberTitle', 'off');
+    subplot(2,2,1);
+    plot(real(ytemp),'.'); grid on;
+    title('均衡后符号幅度'); xlabel('符号索引'); ylabel('幅度');
+    yline(idealLevels,'--r');
 
- [hffe,ye] = FFE_2pscenter(xRx,xTx,NumPreamble_TDE,N1,0.9999); 
-%   [hffe,ye] = VNLE2_2pscenter(xRx,xTx,NumPreamble_TDE,N1,N2,0.9999,WL);  % % 2nd
- 
-%  [hffe,hdfe,ye] = LE_FFE2ps_centerDFE_new( xRx,xTx,NumPreamble_TDE,N1,D1,0.9999,M,M/2);  
-% [hffe,hdfe,ye] = DP_VFFE2pscenter_VDFE( xRx,xTx,NumPreamble_TDE,N1,N2,D1,D2,0.9999,WL,WD,M,M/2);
+    subplot(2,2,2);
+    histogram(real(ytemp),100,'Normalization','probability'); grid on;
+    title('幅度分布'); xlabel('幅度'); ylabel('概率');
+    xline(idealLevels,'--r');
 
-%     figure;plot(hffe); hold on;plot(hdfe);
-%% Normalize
-ym = Normalizepam(ye,M);
-% eyediagram(ym(2000:3000),4) 
-% figure;hist(ym(:),1000);grid on;
-ytemp=ym(NumPreamble_TDE+1:end);
-figure;plot(ytemp(:),'o');grid on;
-figure;hist(ytemp(:),1000);grid on;
-% hold on;hist(xm(1:3000),1000);grid on;
+    subplot(2,2,3);
+    plot(validRange, real(xTx(validRange))-real(ym(validRange)));
+    grid on; title('均衡误差'); xlabel('符号索引'); ylabel('误差');
 
+    subplot(2,2,4);
+    text(0.1,0.8,sprintf('BER = %.3e',BER_sub1),'FontSize',12);
+    text(0.1,0.6,sprintf('SER = %.3e',SER_sub1),'FontSize',12);
+    text(0.1,0.4,sprintf('SNR = %.2f dB',SNRdB_sub1),'FontSize',12);
+    axis off;
 
+    [~, label, ~] = fileparts(dataPath);
+    results(n1).label = label;
+    results(n1).ber = BER_sub1;
+    results(n1).snrDb = SNRdB_sub1;
+    results(n1).ser = SER_sub1;
+    results(n1).numTraining = NumPreamble_TDE;
+    results(n1).numSamples = effectiveLength;
+    results(n1).dataPath = dataPath;
+    results(n1).figure = fig;
 
-%% MQAM demodulation
-ysym = dePAMSource(M,ym);
-
-
-%% BER/SNR
-[ErrCount BER_sub1] = biterr(ysym(NumPreamble_TDE+1:end), xsym(NumPreamble_TDE+1:end), log2(M));
-[ErrorSym SER_sub1] = symerr(ysym(NumPreamble_TDE+1:end), xsym(NumPreamble_TDE+1:end));         
-% figure;plot(ysym(NumPreamble_TDE+1:end)- xsym(NumPreamble_TDE+1:end))
-[SNRdB_sub1,SNR1 ] = snr( xm(NumPreamble_TDE+1:end),ym(NumPreamble_TDE+1:end) );
-
-
-%%%%
-disp([num2str(1),' BER_sub1 = ',num2str(BER_sub1)])
-disp([num2str(1),' SNRdB_sub1 = ',num2str(SNRdB_sub1)])
-
-
-BERall(n1,m1)=BER_sub1;
-xxx
-end
-end
- mean(BERall,1)
-if 0
-[aaa1 bbb1] = sort(BERall(:,end));
-
-avernber = mean(BERall(bbb1(1:10),:),1)
-% figure;plot(NN,avernber)
-
+    fprintf('%s: BER=%.3e, SNR=%.2f dB, 样本=%d\n', label, BER_sub1, SNRdB_sub1, effectiveLength);
 end
 
+validMask = ~isnan([results.ber]);
+if any(validMask)
+    figure('Name','PAM4 BER Summary','NumberTitle','off');
+    bar(categorical({results(validMask).label}), [results(validMask).ber]);
+    ylabel('BER'); grid on;
+    title('各数据集 BER 对比');
+end
 
-berm=mean(BERall,1);
+RandStream.setGlobalStream(prevStream);
 
-figure;semilogy(NN,berm);
-% figure;semilogy(NN,berm);
-% berm
+if nargout == 0
+    assignin('base','loadpam4_results',results);
+end
+end
