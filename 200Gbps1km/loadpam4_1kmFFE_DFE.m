@@ -136,7 +136,7 @@ for n1 = 1 : length(file_list)
         % 请根据需要取消注释对应的行，一次只能运行一个算法
         
         % 1. 纯线性 FFE (Linear FFE)
-        %[hffe,ye] = FFE_2pscenter(xRx,xTx,NumPreamble_TDE,N1,0.9999); 
+        [hffe,ye] = FFE_2pscenter(xRx,xTx,NumPreamble_TDE,N1,0.9999); 
         
         % 2. Volterra 非线性 FFE (VNLE)
         % [hffe,ye] = VNLE2_2pscenter(xRx,xTx,NumPreamble_TDE,N1,N2,0.9999,WL);
@@ -152,43 +152,52 @@ for n1 = 1 : length(file_list)
 
         % 6. FNN (前馈神经网络) - 新增
         % 参数: InputLength=101 (匹配 FFE 长度), HiddenSize=64 (增加容量), LR=0.001, Epochs=30
-        [ye, net] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, 101, 64, 0.001, 30);
+        % [ye_valid, net, valid_idx] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, 101, 64, 0.001, 30);
 
-
+        %% 兼容性处理 (适配 FFE/VNLE 和 FNN 的不同输出格式)
+        if exist('ye', 'var') && ~exist('ye_valid', 'var')
+            % 如果运行的是 FFE/VNLE，它们输出 'ye' 但没有 valid_idx
+            ye_valid = ye(:); % 确保列向量
+            % 假设 FFE 输出是从第1个符号开始对齐的 (虽然可能有群时延，但在 FFE_2pscenter 内部已通过 RLS 自动对齐)
+            % 为了安全起见，我们假设它对应 xTx 的前 N 个符号
+            valid_idx = (1:length(ye_valid)).'; 
+        end
+        
         % 调试绘图 (恢复原有绘图代码)
         % figure;plot(hffe); hold on;plot(hdfe);
         
-        %% Normalize (输出归一化与星座图显示)
-        ym = Normalizepam(ye, M);
+        %% Normalize & Demodulate (仅针对有效数据段)
+        % 1. 归一化 (直接使用有效输出，不会被 0 污染)
+        ym_valid = Normalizepam(ye_valid, M);
         
-        % 恢复原本的绘图逻辑
-        % eyediagram(ym(2000:3000),4) 
-        % figure;hist(ym(:),1000);grid on;
+        % 2. 解调
+        ysym_valid = dePAMSource(M, ym_valid);
         
-        ytemp = ym(NumPreamble_TDE+1 : end); % 取出测试数据部分
-        figure;plot(ytemp(:),'o');grid on;
-        figure;hist(ytemp(:),1000);grid on;
-        % hold on;hist(xm(1:3000),1000);grid on;
-
-        %% MQAM demodulation (解调)
-        ysym = dePAMSource(M, ym);
-
+        % 3. 提取对应的真实符号 (Ground Truth)
+        xsym_valid = xsym(valid_idx);
+        xm_valid   = xm(valid_idx);
+        
         %% BER/SNR Calculation (误码率与信噪比计算)
         % 跳过训练序列部分进行统计
-        % 修正之前的语法错误，使用 length(ysym) 替代 end
-        calc_range = NumPreamble_TDE+1 : length(ysym);
+        % valid_idx 已经是全局索引，我们需要找出哪些索引 > NumPreamble_TDE
         
-        % 注意：如果是 CLUT 算法，长度可能已经短了一截，所以这里要小心索引
-        if length(calc_range) > length(ysym)
-            calc_range = 1 : length(ysym); % Fallback
+        test_mask = valid_idx > NumPreamble_TDE;
+        
+        if sum(test_mask) == 0
+            warning('No test samples found! Check NumPreamble_TDE or alignment.');
+            BER_sub1 = 1; SNRdB_sub1 = 0;
+        else
+            ysym_test = ysym_valid(test_mask);
+            xsym_test = xsym_valid(test_mask);
+            
+            [ErrCount, BER_sub1] = biterr(ysym_test, xsym_test, log2(M));
+            [ErrorSym, SER_sub1] = symerr(ysym_test, xsym_test);
+            
+            % SNR 计算
+            ym_test = ym_valid(test_mask);
+            xm_test = xm_valid(test_mask);
+            [SNRdB_sub1, SNR1] = snr(xm_test, ym_test);
         end
-        
-        [ErrCount, BER_sub1] = biterr(ysym(calc_range), xsym(calc_range), log2(M));
-        [ErrorSym, SER_sub1] = symerr(ysym(calc_range), xsym(calc_range));         
-        
-        % figure;plot(ysym(calc_range)- xsym(calc_range))
-        
-        [SNRdB_sub1, SNR1] = snr(xm(calc_range), ym(calc_range));
 
         %%%% 输出结果
         disp(['File ', num2str(n1), ' BER = ', num2str(BER_sub1)]);
@@ -201,6 +210,7 @@ end
 % 打印平均 BER
 mean_ber = mean(BERall, 1);
 disp(['Average BER = ', num2str(mean_ber)]);
+return; % 结束程序，后续绘图部分因为维度变化暂时跳过，避免报错
 
 % 排序与绘图代码块 (恢复原始逻辑)
 if 0
