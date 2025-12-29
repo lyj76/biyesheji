@@ -144,9 +144,9 @@ end
 
 % 图 1: BER 对比 (分组柱状图)
 figure('Position', [100, 100, 1000, 500]);
-b = bar(log10(Results_BER)); % 分组: 算法为X轴，不同文件为不同颜色的柱子
+b = bar(Results_BER); % 分组: 算法为X轴，不同文件为不同颜色的柱子
 xlabel('Algorithms');
-ylabel('log10(BER)');
+ylabel('BER');
 title(['BER Performance Comparison (D2 = ', num2str(D2), ')']);
 set(gca, 'XTickLabel', algo_names);
 legend(rop_labels, 'Location', 'Best');
@@ -154,7 +154,7 @@ grid on;
 % 标注数值
 for i = 1:num_algos
     for j = 1:num_files
-        text(i + (j-1.5)*0.25, log10(Results_BER(i,j)), num2str(Results_BER(i,j), '%.1e'), ...
+        text(i + (j-1.5)*0.25, Results_BER(i,j), num2str(Results_BER(i,j), '%.1e'), ...
             'HorizontalAlignment','center', 'VerticalAlignment','bottom', 'FontSize', 8);
     end
 end
@@ -179,5 +179,9 @@ for f_idx = 1 : num_files
     ylim([-30, 10]);
 end
 
+disp('==================================================');
+disp('Final BER Results:');
+resTable = array2table(Results_BER, 'VariableNames', matlab.lang.makeValidName(rop_labels), 'RowNames', algo_names);
+disp(resTable);
 disp('==================================================');
 disp('Comparison Completed.');

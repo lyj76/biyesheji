@@ -20,6 +20,9 @@ prevStream = RandStream.setGlobalStream(s);
 
 %% MQAM modulate (PAM4 调制与信号生成)
 [xsym, xm] = PAMSource(M, NumSymbols);
+% 转换为列向量，避免后续 biterr/snr 出现维度不匹配 (Row vs Col)
+xsym = xsym(:);
+xm = xm(:);
 xs = xm; % xs 为发送的符号序列 (Ideal Symbols)
 % xs(find(xs==3))=3;
 % figure;plot(xs(:),'o');grid on;
@@ -133,7 +136,7 @@ for n1 = 1 : length(file_list)
         % 请根据需要取消注释对应的行，一次只能运行一个算法
         
         % 1. 纯线性 FFE (Linear FFE)
-        % [hffe,ye] = FFE_2pscenter(xRx,xTx,NumPreamble_TDE,N1,0.9999); 
+        %[hffe,ye] = FFE_2pscenter(xRx,xTx,NumPreamble_TDE,N1,0.9999); 
         
         % 2. Volterra 非线性 FFE (VNLE)
         % [hffe,ye] = VNLE2_2pscenter(xRx,xTx,NumPreamble_TDE,N1,N2,0.9999,WL);
@@ -145,7 +148,11 @@ for n1 = 1 : length(file_list)
          %[hffe,hdfe,ye] = DP_VFFE2pscenter_VDFE(xRx,xTx,NumPreamble_TDE,N1,N2,D1,D2,0.9999,WL,WD,M,M/2);
         
         % 5. CLUT-VDFE (聚类查找表 VDFE) - 新增
-        [BER_clut, ye] = CLUT_VDFE_Implementation(xRx, xTx, NumPreamble_TDE, N1, N2, D1, D2, WL, WD, M, K_Lin, K_Vol, 0.9999);
+        % [BER_clut, ye] = CLUT_VDFE_Implementation(xRx, xTx, NumPreamble_TDE, N1, N2, D1, D2, WL, WD, M, K_Lin, K_Vol, 0.9999);
+
+        % 6. FNN (前馈神经网络) - 新增
+        % 参数: InputLength=101 (匹配 FFE 长度), HiddenSize=64 (增加容量), LR=0.001, Epochs=30
+        [ye, net] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, 101, 64, 0.001, 30);
 
 
         % 调试绘图 (恢复原有绘图代码)
