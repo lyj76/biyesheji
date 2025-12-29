@@ -161,10 +161,14 @@ for n1 = 1 : length(file_list)
         %% 兼容性处理 (适配 FFE/VNLE 和 FNN 的不同输出格式)
         if exist('ye', 'var') && ~exist('ye_valid', 'var')
             % 如果运行的是 FFE/VNLE，它们输出 'ye' 但没有 valid_idx
-            ye_valid = ye(:); % 确保列向量
-            % 假设 FFE 输出是从第1个符号开始对齐的 (虽然可能有群时延，但在 FFE_2pscenter 内部已通过 RLS 自动对齐)
-            % 为了安全起见，我们假设它对应 xTx 的前 N 个符号
-            valid_idx = (1:length(ye_valid)).'; 
+            if exist('valid_idx', 'var') && ~isempty(valid_idx)
+                ye_valid = ye(valid_idx); % RNN: only keep valid outputs to avoid zero-padding bias
+            else
+                ye_valid = ye(:); % 确保列向量
+                % 假设 FFE 输出是从第1个符号开始对齐的 (虽然可能有群时延，但在 FFE_2pscenter 内部已通过 RLS 自动对齐)
+                % 为了安全起见，我们假设它对应 xTx 的前 N 个符号
+                valid_idx = (1:length(ye_valid)).';
+            end
         end
         
         % 调试绘图 (恢复原有绘图代码)
@@ -182,25 +186,38 @@ for n1 = 1 : length(file_list)
         xm_valid   = xm(valid_idx);
         
         %% BER/SNR Calculation (误码率与信噪比计算)
-        % 跳过训练序列部分进行统计
-        % valid_idx 已经是全局索引，我们需要找出哪些索引 > NumPreamble_TDE
-        
-        test_mask = valid_idx > NumPreamble_TDE;
-        
-        if sum(test_mask) == 0
+        % 只在 valid_idx 上对齐统计，避免无效点和错位污染
+        idx_train = valid_idx(valid_idx <= NumPreamble_TDE);
+        idx_test  = valid_idx(valid_idx >  NumPreamble_TDE);
+
+        if isempty(idx_test)
             warning('No test samples found! Check NumPreamble_TDE or alignment.');
             BER_sub1 = 1; SNRdB_sub1 = 0;
         else
-            ysym_test = ysym_valid(test_mask);
-            xsym_test = xsym_valid(test_mask);
-            
-            [ErrCount, BER_sub1] = biterr(ysym_test, xsym_test, log2(M));
-            [ErrorSym, SER_sub1] = symerr(ysym_test, xsym_test);
-            
-            % SNR 计算
-            ym_test = ym_valid(test_mask);
-            xm_test = xm_valid(test_mask);
-            [SNRdB_sub1, SNR1] = snr(xm_test, ym_test);
+            y_train = ye(idx_train);
+            y_test  = ye(idx_test);
+
+            % 用训练段估计 4 电平阈值（幅度域）
+            [~, C] = kmeans(double(y_train(:)), 4, 'Replicates', 5);
+            levels = sort(C(:)).';
+            thr = (levels(1:3) + levels(2:4)) / 2;
+
+            % 硬切片
+            yq = zeros(size(y_test));
+            yq(y_test < thr(1)) = levels(1);
+            yq(y_test >= thr(1) & y_test < thr(2)) = levels(2);
+            yq(y_test >= thr(2) & y_test < thr(3)) = levels(3);
+            yq(y_test >= thr(3)) = levels(4);
+
+            % 解调并计算 BER/SER（只在 idx_test 上）
+            ysym_test = pamdemod(yq, M, 0, 'gray');
+            xsym_test = xsym(idx_test);
+            [~, BER_sub1] = biterr(ysym_test, xsym_test, log2(M));
+            [~, SER_sub1] = symerr(ysym_test, xsym_test);
+
+            % SNR 计算（仅有效段）
+            xm_test = xm(idx_test);
+            [SNRdB_sub1, SNR1] = snr(xm_test, y_test);
         end
 
         %%%% 输出结果

@@ -1,6 +1,6 @@
 function [ye, net, valid_tx_indices] = RNN_Implementation( ...
     xRx, xTx, NumPreamble_TDE, InputLength, HiddenSize, LearningRate, MaxEpochs, k, ...
-    DelayCandidates, OffsetCandidates, ScanTrainSamples, ScanValSamples)
+    DelayCandidates, OffsetCandidates, ScanTrainSamples, ScanValSamples, ForceDelay, ForceOffset)
 % RNN_Implementation (AR-RNN style MLP with hard-decision feedback)
 %
 % 输入：xRx (2sps), xTx (1sps), NumPreamble_TDE 训练符号数
@@ -22,6 +22,8 @@ function [ye, net, valid_tx_indices] = RNN_Implementation( ...
     if nargin < 10 || isempty(OffsetCandidates), OffsetCandidates = [1 2]; end
     if nargin < 11 || isempty(ScanTrainSamples), ScanTrainSamples = min(5000, NumPreamble_TDE); end
     if nargin < 12 || isempty(ScanValSamples), ScanValSamples = min(2000, max(0, NumPreamble_TDE - ScanTrainSamples)); end
+    if nargin < 13, ForceDelay = []; end
+    if nargin < 14, ForceOffset = []; end
 
     if mod(InputLength,2)==0
         warning('[AR-RNN] InputLength even; recommend odd for centered window.');
@@ -52,9 +54,16 @@ function [ye, net, valid_tx_indices] = RNN_Implementation( ...
     %% ===== 1) scan offset/delay (linear probe) =====
     disp('    [AR-RNN] Scanning best offset/delay using Linear Probe...');
 
+    best_ser = inf;
     best_mse = inf;
     best_delay = DelayCandidates(1);
     best_offset = OffsetCandidates(1);
+
+    % --- fixed PAM4 levels from Tx_n (robust for scan) ---
+    Yref = double(Tx_n(1:min(NumPreamble_TDE, length(Tx_n))));
+    [~, Cref] = kmeans(Yref(:), 4, 'Replicates', 3);
+    levels_ref = sort(Cref(:)).';
+    thr_ref = (levels_ref(1:3) + levels_ref(2:4))/2;
 
     for oi = 1:numel(OffsetCandidates)
         offset = OffsetCandidates(oi);
@@ -82,13 +91,21 @@ function [ye, net, valid_tx_indices] = RNN_Implementation( ...
                 Xva = Xs(ScanTrainSamples+1:ScanTrainSamples+ScanValSamples,:);
                 Yva = Ys(ScanTrainSamples+1:ScanTrainSamples+ScanValSamples,:);
                 Yp  = Xva * w;
-                mse = mean((Yp - Yva).^2);
             else
+                Xva = Xtr;
+                Yva = Ytr;
                 Yp  = Xtr * w;
-                mse = mean((Yp - Ytr).^2);
             end
 
-            if mse < best_mse
+            mse = mean((Yp - Yva).^2);
+
+            % --- decision-domain metric: SER using fixed PAM4 thresholds ---
+            Yp_q = hard_slice_pam4(Yp, levels_ref, thr_ref);
+            Yv_q = hard_slice_pam4(Yva, levels_ref, thr_ref);
+            ser = mean(Yp_q ~= Yv_q);
+
+            if ser < best_ser
+                best_ser = ser;
                 best_mse = mse;
                 best_delay = delay;
                 best_offset = offset;
@@ -97,7 +114,17 @@ function [ye, net, valid_tx_indices] = RNN_Implementation( ...
     end
 
     disp(['    [AR-RNN] Selected Offset=',num2str(best_offset), ...
-          ', Delay=',num2str(best_delay),', Linear MSE=',num2str(best_mse,'%.4g')]);
+          ', Delay=',num2str(best_delay),', SER=',num2str(best_ser,'%.4g'), ...
+          ', Linear MSE=',num2str(best_mse,'%.4g')]);
+
+    if ~isempty(ForceDelay)
+        disp(['    [AR-RNN] ForceDelay override: ', num2str(best_delay), ' -> ', num2str(ForceDelay)]);
+        best_delay = ForceDelay;
+    end
+    if ~isempty(ForceOffset)
+        disp(['    [AR-RNN] ForceOffset override: ', num2str(best_offset), ' -> ', num2str(ForceOffset)]);
+        best_offset = ForceOffset;
+    end
 
     %% ===== 2) build full aligned dataset =====
     [Xall, Yall, valid_tx_indices] = build_center_window_dataset(Rx, Tx_n, InputLength, best_offset, best_delay, []);
