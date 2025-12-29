@@ -50,7 +50,6 @@ NN=101; % 默认使用 NN=101，恢复原始逻辑
 
 % 待处理的数据文件列表 (实验数据)
 file_list = {'rop3dBm_1.mat', 'rop5dBm_1.mat'};
-% 恢复 BERall 的原始维度初始化
 BERall = zeros(length(file_list), length(NN));
 
 for n1 = 1 : length(file_list)
@@ -121,6 +120,10 @@ for n1 = 1 : length(file_list)
         D2 = 0;   
         
         WD = 1;    % DFE 非线性窗口长度 (Lag)
+        
+        % CLUT-VDFE 聚类参数 (新增)
+        K_Lin = 18;  % 线性簇数量
+        K_Vol = 90;  % 非线性簇数量 (通常要大一些)
 
         % 缩放参数 (未使用/备用)
         aa = 0.3;
@@ -139,7 +142,11 @@ for n1 = 1 : length(file_list)
         % [hffe,hdfe,ye] = LE_FFE2ps_centerDFE_new(xRx,xTx,NumPreamble_TDE,N1,D1,0.9999,M,M/2);  
         
         % 4. 全非线性 FFE + DFE (终极 BOSS)
-        [hffe,hdfe,ye] = DP_VFFE2pscenter_VDFE(xRx,xTx,NumPreamble_TDE,N1,N2,D1,D2,0.9999,WL,WD,M,M/2);
+         [hffe,hdfe,ye] = DP_VFFE2pscenter_VDFE(xRx,xTx,NumPreamble_TDE,N1,N2,D1,D2,0.9999,WL,WD,M,M/2);
+        
+        % 5. CLUT-VDFE (聚类查找表 VDFE) - 新增
+        %[BER_clut, ye] = CLUT_VDFE_Implementation(xRx, xTx, NumPreamble_TDE, N1, N2, D1, D2, WL, WD, M, K_Lin, K_Vol, 0.9999);
+
 
         % 调试绘图 (恢复原有绘图代码)
         % figure;plot(hffe); hold on;plot(hdfe);
@@ -163,6 +170,11 @@ for n1 = 1 : length(file_list)
         % 跳过训练序列部分进行统计
         % 修正之前的语法错误，使用 length(ysym) 替代 end
         calc_range = NumPreamble_TDE+1 : length(ysym);
+        
+        % 注意：如果是 CLUT 算法，长度可能已经短了一截，所以这里要小心索引
+        if length(calc_range) > length(ysym)
+            calc_range = 1 : length(ysym); % Fallback
+        end
         
         [ErrCount, BER_sub1] = biterr(ysym(calc_range), xsym(calc_range), log2(M));
         [ErrorSym, SER_sub1] = symerr(ysym(calc_range), xsym(calc_range));         
