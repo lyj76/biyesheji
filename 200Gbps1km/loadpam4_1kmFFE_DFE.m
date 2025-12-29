@@ -115,8 +115,8 @@ bb=1;
  %[hffe,ye] = FFE_2pscenter(xRx,xTx,NumPreamble_TDE,N1,0.9999); 
 %  [hffe,ye] = VNLE2_2pscenter(xRx,xTx,NumPreamble_TDE,N1,N2,0.9999,WL);  % % 2nd
  
-  [hffe,hdfe,ye] = LE_FFE2ps_centerDFE_new( xRx,xTx,NumPreamble_TDE,N1,D1,0.9999,M,M/2);  
-% [hffe,hdfe,ye] = DP_VFFE2pscenter_VDFE( xRx,xTx,NumPreamble_TDE,N1,N2,D1,D2,0.9999,WL,WD,M,M/2);
+%  [hffe,hdfe,ye] = LE_FFE2ps_centerDFE_new( xRx,xTx,NumPreamble_TDE,N1,D1,0.9999,M,M/2);  
+ [hffe,hdfe,ye] = DP_VFFE2pscenter_VDFE( xRx,xTx,NumPreamble_TDE,N1,N2,D1,D2,0.9999,WL,WD,M,M/2);
 
 %     figure;plot(hffe); hold on;plot(hdfe);
 %% Normalize

@@ -58,6 +58,68 @@ $$ \text{Minimize } \sum |d(n) - y(n)|^2 $$
 
 ---
 
+## 第二部分番外：从向量乘法到正规方程 (Normal Equation) —— 深度数学推导
+
+这里回应您关于“矩阵方程”和“正规方程”的深度疑问。这一步是将直觉转化为严谨数学的关键。
+
+### 1. 从单点到矩阵：堆叠的力量
+我们在代码里看到的是**单点公式**（每一时刻 n）：
+$$ y(n) = \mathbf{x}(n)^T \mathbf{h} $$
+其中：
+*   $\mathbf{h}$ 是 $N \times 1$ 的列向量（滤波器系数）。
+*   $\mathbf{x}(n)$ 是 $N \times 1$ 的列向量（当前窗口内的输入数据）。
+*   $y(n)$ 是一个标量。
+
+如果我们把一段时间内（比如 $L$ 个点）的所有数据都收集起来，堆叠在一起，就会变成**矩阵形式**：
+
+$$ \mathbf{y} = \mathbf{X} \mathbf{h} $$
+
+这里：
+*   $\mathbf{y}$ 是 $L \times 1$ 的输出向量 $\begin{bmatrix} y(1) \\ y(2) \\ \vdots \end{bmatrix}$。
+*   $\mathbf{X}$ 是 $L \times N$ 的**数据矩阵**。它的**每一行**就是某一时刻的输入向量 $\mathbf{x}(n)^T$。
+    $$ \mathbf{X} = \begin{bmatrix} — \mathbf{x}(1)^T — \\ — \mathbf{x}(2)^T — \\ \vdots \\ — \mathbf{x}(L)^T — \end{bmatrix} $$
+
+### 2. 最小二乘问题与目标函数
+我们的目标是让输出 $\mathbf{y}$ 尽可能接近期望信号 $\mathbf{d}$（也就是 Target）。
+误差向量 $\mathbf{e} = \mathbf{d} - \mathbf{X}\mathbf{h}$。
+我们要最小化误差的平方和（损失函数 $J$）：
+$$ J(\mathbf{h}) = \|\mathbf{e}\|^2 = (\mathbf{d} - \mathbf{X}\mathbf{h})^T (\mathbf{d} - \mathbf{X}\mathbf{h}) $$
+
+### 3. 求解极值：推导正规方程 (Normal Equation)
+要找最小值，就是对 $\mathbf{h}$ 求导并令其为 0。
+
+展开 $J(\mathbf{h})$:
+$$ J = \mathbf{d}^T\mathbf{d} - \mathbf{d}^T\mathbf{X}\mathbf{h} - \mathbf{h}^T\mathbf{X}^T\mathbf{d} + \mathbf{h}^T\mathbf{X}^T\mathbf{X}\mathbf{h} $$
+由于结果是标量，中间两项其实相等，可以合并。求梯度 $\nabla_{\mathbf{h}} J$:
+$$ \nabla_{\mathbf{h}} J = -2\mathbf{X}^T\mathbf{d} + 2\mathbf{X}^T\mathbf{X}\mathbf{h} $$
+
+令梯度为 0：
+$$ \mathbf{X}^T\mathbf{X}\mathbf{h} = \mathbf{X}^T\mathbf{d} $$
+
+**这就是大名鼎鼎的“正规方程 (Normal Equation)”！**
+
+### 4. 为什么这就是“除法”？(连接维纳-霍夫方程)
+现在我们想求 $\mathbf{h}$，只要把左边的 $\mathbf{X}^T\mathbf{X}$ 移过去（乘以逆矩阵）：
+
+$$ \mathbf{h} = (\mathbf{X}^T\mathbf{X})^{-1} \mathbf{X}^T\mathbf{d} $$
+
+让我们把这个式子翻译成信号处理的语言：
+*   $\mathbf{X}^T\mathbf{X}$：本质上就是输入信号的**自相关矩阵 (Autocorrelation Matrix)**，记作 $\mathbf{R}_{xx}$。它代表输入信号自己和自己像不像。
+*   $\mathbf{X}^T\mathbf{d}$：本质上就是输入信号与期望信号的**互相关向量 (Cross-correlation Vector)**，记作 $\mathbf{r}_{xd}$。
+
+所以公式变成了：
+$$ \mathbf{h} = \mathbf{R}_{xx}^{-1} \mathbf{r}_{xd} $$
+
+**这完美解释了您的直觉：**
+*   $\mathbf{h}$ (系统) = $\mathbf{Output}$ (互相关结果) / $\mathbf{Input}$ (自相关矩阵)。
+*   这就是维纳-霍夫方程的离散形式。
+*   只要 $\mathbf{X}^T\mathbf{X}$ 是满秩的（信号包含足够丰富的信息，不仅仅是直流或简单的正弦波），这个方程就**必定有唯一解**。
+
+**RLS 的作用**：
+RLS 算法不需要等到收集完所有 $L$ 个点构造出巨大的 $\mathbf{X}$ 矩阵再求逆，而是用迭代的方式，一步步逼近这个最终解。
+
+---
+
 ## 第三部分：代码中的“滑动窗口”操作详解
 
 这个代码里最让人晕的是：**2倍过采样、滑动窗口、Padding**。我们用一个极简的例子来演示。
