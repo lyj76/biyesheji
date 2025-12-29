@@ -57,7 +57,7 @@ end
 
 
 n1
-load(['D:\data\PAM4_1km202211\data202211\1km\rop5dBm_' num2str(Ndata(n1))],'ReData')
+load(['rop5dBm_' num2str(Ndata(n1))],'ReData')
 
 % close all
 % close all
