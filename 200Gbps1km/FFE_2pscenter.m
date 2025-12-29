@@ -71,8 +71,13 @@ disp(['mse = ',num2str((abs(e(end))).^2)])
 % xTx1 = [zeros(2*N1-1,1);Txdata];
 xTx1 = [zeros(L1,1);Txdata;zeros(L1,1)];
 xRx1 = Rxdata;
-ye = zeros(size(Rxdata));
-for n =  1:length(xRx1)   
+
+% 避免 2*n 索引越界：限定可计算的最大长度
+maxN = floor((length(xTx1) - (N1-1)) / 2);
+lenOut = min(length(xRx1), maxN);
+
+ye = zeros(lenOut,1);
+for n =  1:lenOut   
 %     x1=xTx1(n:-1:n-N1+1);
 %     x2 = xTx1(n:-1:n-N2+1)*xTx1(n:-1:n-N2+1).';
     x=xTx1(2*n+(N1-1)/2+L1:-1:2*n-(N1-1)/2+L1);
@@ -83,5 +88,4 @@ end
 % ye =ye(2*N:end);
 ye =ye(:).';
 end
-
 

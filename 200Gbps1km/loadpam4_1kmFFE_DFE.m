@@ -34,12 +34,10 @@ prevStream = RandStream.setGlobalStream(randStream);
 [xsym, xm] = PAMSource(M, NumSymbols);
 xs = xm;
 
-%% pluse shaping
+%% pulse shaping（使用 rcosdesign 代替已弃用的 fdesign.pulseshaping）
 rolloff = 0.1;
-N = 128;
-h = fdesign.pulseshaping(Osamp_factor,'Raised Cosine','N,Beta',N,rolloff);
-Hd = design(h);
-sqrt_ht = Hd.Numerator;
+spanSymbols = 64; % 与原 128 taps、2x 上采样近似匹配（64*2+1 ≈ 129 taps）
+sqrt_ht = rcosdesign(rolloff, spanSymbols, Osamp_factor, 'sqrt');
 sqrt_ht = sqrt_ht./max(sqrt_ht);
 x_upsamp = upsample(xs,Osamp_factor);%upsampling
 x_shape = conv(sqrt_ht,x_upsamp);
