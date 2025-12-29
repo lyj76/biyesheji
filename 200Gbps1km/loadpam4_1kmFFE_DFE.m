@@ -142,10 +142,10 @@ for n1 = 1 : length(file_list)
         % [hffe,hdfe,ye] = LE_FFE2ps_centerDFE_new(xRx,xTx,NumPreamble_TDE,N1,D1,0.9999,M,M/2);  
         
         % 4. 全非线性 FFE + DFE (终极 BOSS)
-         [hffe,hdfe,ye] = DP_VFFE2pscenter_VDFE(xRx,xTx,NumPreamble_TDE,N1,N2,D1,D2,0.9999,WL,WD,M,M/2);
+         %[hffe,hdfe,ye] = DP_VFFE2pscenter_VDFE(xRx,xTx,NumPreamble_TDE,N1,N2,D1,D2,0.9999,WL,WD,M,M/2);
         
         % 5. CLUT-VDFE (聚类查找表 VDFE) - 新增
-        %[BER_clut, ye] = CLUT_VDFE_Implementation(xRx, xTx, NumPreamble_TDE, N1, N2, D1, D2, WL, WD, M, K_Lin, K_Vol, 0.9999);
+        [BER_clut, ye] = CLUT_VDFE_Implementation(xRx, xTx, NumPreamble_TDE, N1, N2, D1, D2, WL, WD, M, K_Lin, K_Vol, 0.9999);
 
 
         % 调试绘图 (恢复原有绘图代码)

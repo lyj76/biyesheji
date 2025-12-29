@@ -1,291 +1,249 @@
-function [BER, ye_CLUT] = CLUT_VDFE_Implementation(Rx_in, Tx_in, NumPreamble, N1, N2, D1, D2, WL, WD, M, K_Lin, K_Vol, Lambda)
-% CLUT_VDFE_Implementation: 修复版 - 统一索引与稳健电平学习
+function [BER, ye_aligned] = CLUT_VDFE_Implementation(Rx_in, Tx_in, NumPreamble, N1, N2, D1, D2, WL, WD, M, K_Lin, K_Vol, Lambda)
+% CLUT_VDFE_Implementation: 修复版 - 保证全序列对齐
 %
-% 修复点:
-% 1. 全局索引: 不再物理切分 InputRx，彻底解决 application 阶段开头的数据越界/对齐问题。
-% 2. 真实电平学习: PamLevels 不再由公式生成，而是从训练数据中统计得出，防止归一化比例失调。
-% 3. 调试信息: 输出 RLS 训练后的 MSE，判断训练是否收敛。
+% 逻辑流:
+% 1. 全序列处理 (Pad Rx).
+% 2. n <= NumPreamble: RLS 训练模式 (Training).
+% 3. n == NumPreamble: 触发聚类 & 建表 (Build LUT).
+% 4. n >  NumPreamble: 查表模式 (CLUT Application).
+% 5. 返回全长 ye，确保与主程序对齐.
 
-    %% 0. 数据预处理
+    %% 0. 初始化
     InputRx = Rx_in(:);
     DesiredTx = Tx_in(:);
     
-    % --- 归一化 (关键: 保持 Rx 和 Tx 能量一致) ---
-    scale_Rx = mean(abs(InputRx)); 
-    if scale_Rx == 0, scale_Rx = 1; end
-    InputRx = InputRx ./ scale_Rx;
+    % 归一化
+    InputRx = InputRx ./ mean(abs(InputRx(:)));
+    DesiredTx = DesiredTx ./ mean(abs(DesiredTx(:)));
     
-    scale_Tx = mean(abs(DesiredTx));
-    if scale_Tx == 0, scale_Tx = 1; end
-    DesiredTx = DesiredTx ./ scale_Tx;
+    % 备份全长
+    TotalSyms = length(DesiredTx);
+    ye_aligned = zeros(TotalSyms, 1);
     
-    % --- 学习真实的 PAM 电平 (用于 LUT) ---
-    % 从训练序列的前 1000 个符号中提取聚类中心，确保查表电平与 RLS 目标完全一致
-    % 这样即使 scale 稍有偏差，LUT 也能自动对齐
-    if NumPreamble > 500
-        ref_seq = DesiredTx(100:500); % 避开开头可能的暂态
-    else
-        ref_seq = DesiredTx;
-    end
-    [~, LearnedLevels] = kmeans(ref_seq, M, 'MaxIter', 10, 'Replicates', 3);
-    PamLevels = sort(LearnedLevels).'; % 确保是从小到大排列 [-1.5, -0.5, ...]
-    
-    % 偏移量计算
+    % 辅助参数
     L_FFE_Lin = floor((N1 - 1) / 2);
     L_FFE_Vol = floor((N2 - 1) / 2);
-    
-    %% 1. 阶段一：RLS 训练 (Training Phase)
     
     % 维度计算
     Dim_FFE_Lin = N1;
     Dim_FFE_Vol = (2 * N2 - WL + 1) * WL / 2;
     Dim_DFE_Lin = D1;
-    
     Dim_DFE_Vol = 0;
     if D2 > 0
         for m = 0 : WD-1
             if (D2 - m) > 0, Dim_DFE_Vol = Dim_DFE_Vol + (D2 - m); end
         end
     end
-    
     Dim_Total = Dim_FFE_Lin + Dim_FFE_Vol + Dim_DFE_Lin + Dim_DFE_Vol;
     
-    % RLS 初始化
-    P = eye(Dim_Total) * 1; % 稍微减小初始方差，增加稳定性
+    % RLS 变量
+    P = eye(Dim_Total) * 10; 
     w = zeros(Dim_Total, 1);
     
-    % 训练范围: 避开开头的 filter delay，直到 NumPreamble
-    StartIdx = max([N1, N2, D1, D2]) + 10; 
-    EndIdx_Train = NumPreamble;
+    % LUT 变量 (初始化为空)
+    LUT_Linear = [];
+    LUT_Volterra = [];
+    idx_L_map = [];
+    idx_V_map = [];
+    has_Vol_DFE = (D2 > 0);
     
-    % 误差记录
-    mse_history = zeros(EndIdx_Train - StartIdx + 1, 1);
-    cnt = 1;
+    % PAM Levels (用于查表量化)
+    if M == 4
+        BaseLevels = [-3, -1, 1, 3];
+        PamLevels = BaseLevels / mean(abs(BaseLevels)); 
+    else
+        BaseLevels = -(M-1):2:(M-1);
+        PamLevels = BaseLevels / mean(abs(BaseLevels));
+    end
+    RawProds = unique(kron(PamLevels, PamLevels)); % 非线性积的电平表
+    
+    % 辅助函数: 找最近电平索引
+    get_idx = @(val, levels) (find(abs(levels - val) == min(abs(levels - val)), 1));
 
-    for n = StartIdx : EndIdx_Train
-        % 1.1 FFE 特征 (Rx)
-        idx_c = 2*n; % 2 samples/symbol 假设对齐在偶数索引
+    % 补零处理 (Align like DP_VFFE)
+    PaddingLen = 1000;
+    InputRx_Pad = [zeros(PaddingLen, 1); InputRx; zeros(L_FFE_Lin, 1)];
+    DesiredTx_Pad = [zeros(PaddingLen/2, 1); DesiredTx];
+    
+    % DFE Buffer
+    MaxLag = max(D1, D2) + 5;
+    DFE_Buf = zeros(MaxLag, 1);
+
+    % 主循环起始点
+    StartIndex = PaddingLen/2 + 1; % 对应 DesiredTx(1)
+    EndIndex = StartIndex + TotalSyms - 1;
+    
+    % 调试计数
+    disp('Starting CLUT-VDFE Loop...');
+    
+    %% 主循环 (Hybrid RLS -> CLUT)
+    
+    % loop_n 对应 DesiredTx 的索引 (1 .. TotalSyms)
+    % pad_n  对应 Pad 后的索引
+    
+    for pad_n = StartIndex : EndIndex
         
-        % 越界保护
-        if idx_c + L_FFE_Lin > length(InputRx), break; end
+        loop_n = pad_n - StartIndex + 1; % 当前处理的第几个符号
         
-        feat_F_L = InputRx(idx_c + L_FFE_Lin : -1 : idx_c - L_FFE_Lin);
+        % --- A. 构建 FFE 特征 (Common) ---
+        idx_c = 2*pad_n; % 2 samples/symbol
+        if idx_c + L_FFE_Lin > length(InputRx_Pad), break; end
         
+        % 1. Linear FFE
+        feat_F_L = InputRx_Pad(idx_c + L_FFE_Lin : -1 : idx_c - L_FFE_Lin);
+        
+        % 2. Volterra FFE
         feat_F_V = [];
         for m = 1 : WL
-            % 使用严格对齐的非线性项
+            idx_v_start = idx_c + L_FFE_Vol + (m-1);
+            vec_a = InputRx_Pad(idx_v_start : -1 : idx_v_start - (2*N2 - WL)); 
+            % 修正逻辑: 必须严格匹配 Dim 计算
+            % 使用之前验证过的逻辑:
             idx_base = idx_c + L_FFE_Vol + (m-1);
-            va = InputRx(idx_base : -1 : idx_base - (2*N2 - WL)); % 长度修正
-            % 上一行长度计算比较晦涩，改为显式循环构造或使用确定长度切片
-            % 为了绝对稳健，这里改回最直观的写法:
-            idx_start = idx_c + L_FFE_Vol + (m-1);
-            idx_end = idx_c - L_FFE_Vol + (m-1);
-            vec_raw = InputRx(idx_start : -1 : idx_end);
-            
-            vec_A = vec_raw;
-            % vec_B 是 vec_A 延迟 m-1 个单位? 
-            % 原代码逻辑: va .* vb. vb 是 va 延迟 m-1.
-            % vec_B = InputRx((idx_start : -1 : idx_end) - (m-1));
-            % 这等价于 vec_raw 本身和延迟后的自己相乘
-            
-            % 修正: 确保 vec_B 不越界
-            vec_B = InputRx((idx_start - (m-1)) : -1 : (idx_end - (m-1)));
-            
-            feat_F_V = [feat_F_V; vec_A .* vec_B];
+            va = InputRx_Pad(idx_base : -1 : idx_base - (2*N2 - WL)); % 长度不对齐风险?
+            % 让我们用绝对索引更安全:
+            idx_s = idx_c + L_FFE_Vol + (m-1);
+            idx_e = idx_c - L_FFE_Vol + (m-1);
+            va = InputRx_Pad(idx_s : -1 : idx_e);
+            vb = InputRx_Pad((idx_s : -1 : idx_e) - (m-1));
+            feat_F_V = [feat_F_V; va .* vb];
         end
         
-        % 1.2 DFE 特征 (Tx - Ideal)
-        feat_D_L = DesiredTx(n-1 : -1 : n-D1);
+        % --- B. 模式分支 ---
         
-        feat_D_V = [];
-        if D2 > 0
-            % 必须使用一段连续的历史数据来构造交叉项，顺序极其重要
-            hist_seg = DesiredTx(n-1 : -1 : max(1, n-D2));
-            if length(hist_seg) < D2, hist_seg = [hist_seg; zeros(D2-length(hist_seg),1)]; end
+        if loop_n <= NumPreamble
             
-            for m = 0 : WD-1
-                len_slice = D2 - m;
-                if len_slice > 0
-                    vec_A = hist_seg(1 : len_slice);
-                    vec_B = hist_seg(1+m : len_slice+m);
-                    feat_D_V = [feat_D_V; vec_A .* vec_B];
+            % =========== RLS 训练模式 ===========
+            
+            % DFE 特征 (用 Tx)
+            feat_D_L = DesiredTx_Pad(pad_n-1 : -1 : pad_n-D1);
+            
+            feat_D_V = [];
+            if D2 > 0
+                hist_seg = DesiredTx_Pad(pad_n-1 : -1 : pad_n-D2);
+                % Pad if needed
+                 if length(hist_seg) < D2, hist_seg = [hist_seg; zeros(D2-length(hist_seg),1)]; end
+
+                for m = 0 : WD-1
+                    if (D2-m) > 0
+                        vec_a = hist_seg(1 : D2-m);
+                        vec_b = hist_seg(1+m : D2);
+                        feat_D_V = [feat_D_V; vec_a .* vec_b];
+                    end
                 end
             end
-        end
-        
-        % 1.3 RLS Update
-        u = [feat_F_L; feat_F_V; feat_D_L; feat_D_V];
-        d_desired = DesiredTx(n);
-        
-        if length(u) == Dim_Total
-            output_raw = w' * u;
-            e = d_desired - output_raw;
-            mse_history(cnt) = abs(e)^2; cnt = cnt + 1;
+            
+            % RLS 更新
+            u = [feat_F_L; feat_F_V; feat_D_L; feat_D_V];
+            d_target = DesiredTx_Pad(pad_n);
+            
+            y_out = w' * u;
+            e = d_target - y_out;
             
             k = (P * u) / (Lambda + u' * P * u);
             w = w + k * e;
             P = (P - k * u' * P) / Lambda;
-        end
-    end
-    
-    MSE_Final = mean(mse_history(max(1, end-500):end));
-    disp(['  > CLUT-VDFE RLS Training MSE: ', num2str(MSE_Final)]);
-    if MSE_Final > 0.5
-        warning('RLS Training failed to converge (MSE > 0.5). Output may be garbage.');
-    end
-    
-    % 提取系数
-    idx_cut1 = Dim_FFE_Lin + Dim_FFE_Vol;
-    w_FFE = w(1 : idx_cut1);
-    w_DFE = w(idx_cut1 + 1 : end);
-    w_DFE_Lin = w_DFE(1 : Dim_DFE_Lin);
-    w_DFE_Vol = w_DFE(Dim_DFE_Lin + 1 : end);
-
-    %% 2. 阶段二：聚类与建表 (Clustering & LUT)
-    
-    % --- 2.1 线性 DFE ---
-    % 如果 K_Lin >= D1，不进行聚类，直接一对一映射（退化为普通 LUT）
-    eff_K_Lin = min(K_Lin, length(w_DFE_Lin));
-    
-    if eff_K_Lin < length(w_DFE_Lin)
-        try
-            [idx_L_map, C_L_vals] = kmeans(w_DFE_Lin, eff_K_Lin, 'MaxIter', 100, 'Replicates', 1);
-        catch
-            warning('K-means failed for Linear DFE. Fallback to full coefficients.');
-            idx_L_map = (1:length(w_DFE_Lin))'; C_L_vals = w_DFE_Lin; eff_K_Lin = length(w_DFE_Lin);
-        end
-    else
-        idx_L_map = (1:length(w_DFE_Lin))'; C_L_vals = w_DFE_Lin;
-    end
-    
-    % --- 2.2 非线性 DFE ---
-    eff_K_Vol = min(K_Vol, length(w_DFE_Vol));
-    has_Vol_DFE = (eff_K_Vol > 0);
-    
-    if has_Vol_DFE && eff_K_Vol < length(w_DFE_Vol)
-        try
-            [idx_V_map, C_V_vals] = kmeans(w_DFE_Vol, eff_K_Vol, 'MaxIter', 100, 'Replicates', 1);
-        catch
-            idx_V_map = (1:length(w_DFE_Vol))'; C_V_vals = w_DFE_Vol; eff_K_Vol = length(w_DFE_Vol);
-        end
-    elseif has_Vol_DFE
-        idx_V_map = (1:length(w_DFE_Vol))'; C_V_vals = w_DFE_Vol;
-    end
-    
-    % --- 2.3 建表 ---
-    % 线性表: Rows=Cluster, Cols=Levels
-    LUT_Linear = zeros(eff_K_Lin, M);
-    for k = 1 : eff_K_Lin
-        LUT_Linear(k, :) = C_L_vals(k) * PamLevels;
-    end
-    
-    % 非线性表: 构建积的可能值
-    % PamLevels 包含从训练数据学到的电平，例如 [-1.4, -0.4, 0.4, 1.4]
-    % 我们需要所有可能的两两乘积
-    RawProds = unique(kron(PamLevels, PamLevels));
-    LUT_Volterra = zeros(eff_K_Vol, length(RawProds));
-    if has_Vol_DFE
-        for k = 1 : eff_K_Vol
-            LUT_Volterra(k, :) = C_V_vals(k) * RawProds;
-        end
-    end
-    
-    %% 3. 阶段三：CLUT-VDFE 运行 (Application Phase)
-    
-    % 关键修复: 不切分 Rx，而是从 NumPreamble + 1 开始继续跑
-    % 这样历史数据 (FFE window) 自然存在于 InputRx 中
-    StartIdx_App = NumPreamble + 1;
-    EndIdx_App = length(DesiredTx); 
-    
-    N_Test = EndIdx_App - StartIdx_App + 1;
-    ye_CLUT = zeros(N_Test, 1);
-    
-    % 初始化 Buffer (用最后一段训练数据热启动)
-    MaxLag = max(D1, D2);
-    if StartIdx_App > MaxLag
-        DFE_Buf = DesiredTx(StartIdx_App-1 : -1 : StartIdx_App-MaxLag);
-    else
-        DFE_Buf = zeros(MaxLag, 1);
-    end
-    
-    % 快速查找辅助函数 (Nearest Neighbor)
-    % 给定一个值 val，在 vec 中找到最近值的索引
-    get_idx = @(val, vec) (find(abs(vec - val) == min(abs(vec - val)), 1));
-
-    disp('  > Running CLUT-VDFE Application...');
-    
-    for i = 1 : N_Test
-        n = StartIdx_App + (i-1); % 当前处理的绝对符号索引
-        
-        % --- A. FFE (Standard Calculation) ---
-        idx_c = 2*n; 
-        
-        if idx_c + L_FFE_Lin > length(InputRx), break; end
-        
-        feat_F_L = InputRx(idx_c + L_FFE_Lin : -1 : idx_c - L_FFE_Lin);
-        
-        feat_F_V = [];
-        for m = 1 : WL
-            idx_start = idx_c + L_FFE_Vol + (m-1);
-            idx_end = idx_c - L_FFE_Vol + (m-1);
             
-            vec_A = InputRx(idx_start : -1 : idx_end);
-            vec_B = InputRx((idx_start - (m-1)) : -1 : (idx_end - (m-1)));
-            feat_F_V = [feat_F_V; vec_A .* vec_B];
-        end
-        
-        y_FFE = w_FFE' * [feat_F_L; feat_F_V];
-        
-        % --- B. DFE (CLUT - No Multiplication) ---
-        y_DFE = 0;
-        
-        % 线性部分查表
-        for k = 1 : D1
-            sym_val = DFE_Buf(k);
-            % 找到该值对应 PamLevels 的第几个 (1..M)
-            s_idx = get_idx(sym_val, PamLevels);
+            ye_aligned(loop_n) = y_out;
             
-            cluster_id = idx_L_map(k);
-            y_DFE = y_DFE + LUT_Linear(cluster_id, s_idx);
-        end
-        
-        % 非线性部分查表
-        if has_Vol_DFE
-            cnt_v = 1;
-            for m = 0 : WD-1
-                len_slice = D2 - m;
-                if len_slice > 0
-                    for k = 1 : len_slice
-                        val_A = DFE_Buf(k);
-                        val_B = DFE_Buf(k+m);
-                        prod_val = val_A * val_B;
-                        
-                        p_idx = get_idx(prod_val, RawProds);
-                        cluster_id = idx_V_map(cnt_v);
-                        y_DFE = y_DFE + LUT_Volterra(cluster_id, p_idx);
-                        
-                        cnt_v = cnt_v + 1;
+            % 同步 Buffer (为切换做准备)
+            if loop_n > 1
+                DFE_Buf = [DesiredTx_Pad(pad_n-1); DFE_Buf(1:end-1)];
+            end
+            
+            % =========== 触发点：聚类与建表 ===========
+            if loop_n == NumPreamble
+                disp('Training done. Switching to CLUT mode...');
+                
+                % 提取系数
+                idx_cut = Dim_FFE_Lin + Dim_FFE_Vol;
+                w_FFE = w(1 : idx_cut);
+                w_DFE = w(idx_cut+1 : end);
+                w_DFE_Lin = w_DFE(1 : Dim_DFE_Lin);
+                w_DFE_Vol = w_DFE(Dim_DFE_Lin+1 : end);
+                
+                % 1. Linear Clustering
+                eff_K_Lin = min(K_Lin, length(w_DFE_Lin));
+                try
+                    [idx_L_map, C_L_vals] = kmeans(w_DFE_Lin, eff_K_Lin, 'Replicates', 1, 'MaxIter', 50);
+                catch
+                    idx_L_map = (1:length(w_DFE_Lin))'; C_L_vals = w_DFE_Lin; eff_K_Lin=length(w_DFE_Lin);
+                end
+                
+                % 2. Volterra Clustering
+                if has_Vol_DFE
+                    eff_K_Vol = min(K_Vol, length(w_DFE_Vol));
+                    try
+                        [idx_V_map, C_V_vals] = kmeans(w_DFE_Vol, eff_K_Vol, 'Replicates', 1, 'MaxIter', 50);
+                    catch
+                        idx_V_map = (1:length(w_DFE_Vol))'; C_V_vals = w_DFE_Vol; eff_K_Vol=length(w_DFE_Vol);
+                    end
+                end
+                
+                % 3. Build LUTs
+                LUT_Linear = zeros(eff_K_Lin, M);
+                for k=1:eff_K_Lin, LUT_Linear(k,:) = C_L_vals(k) * PamLevels; end
+                
+                if has_Vol_DFE
+                    LUT_Volterra = zeros(eff_K_Vol, length(RawProds));
+                    for k=1:eff_K_Vol, LUT_Volterra(k,:) = C_V_vals(k) * RawProds; end
+                end
+            end
+            
+        else
+            % =========== CLUT 查表模式 ===========
+            
+            % A. FFE (依然用乘法)
+            % FFE 向量 u_FFE = [feat_F_L; feat_F_V]
+            u_FFE = [feat_F_L; feat_F_V];
+            y_FFE = w_FFE' * u_FFE;
+            
+            % B. DFE (用查表)
+            y_DFE = 0;
+            
+            % B1. Linear LUT
+            % Buffer(1) is x(n-1), corresponds to w_DFE_Lin(1)
+            for i = 1 : D1
+                sym = DFE_Buf(i);
+                s_idx = get_idx(sym, PamLevels); % Quantize/Find Index
+                c_id = idx_L_map(i);             % Find Cluster ID
+                y_DFE = y_DFE + LUT_Linear(c_id, s_idx);
+            end
+            
+            % B2. Nonlinear LUT
+            if has_Vol_DFE
+                cnt_v = 1;
+                for m = 0 : WD-1
+                    if (D2 - m) > 0
+                        for k = 1 : (D2-m)
+                            val_A = DFE_Buf(k);
+                            val_B = DFE_Buf(k+m);
+                            prod_val = val_A * val_B;
+                            
+                            p_idx = get_idx(prod_val, RawProds); % Find Product Index
+                            c_id = idx_V_map(cnt_v);
+                            y_DFE = y_DFE + LUT_Volterra(c_id, p_idx);
+                            
+                            cnt_v = cnt_v + 1;
+                        end
                     end
                 end
             end
+            
+            % Output
+            y_out = y_FFE + y_DFE;
+            ye_aligned(loop_n) = y_out;
+            
+            % Slicer & Update Buffer
+            dec_idx = get_idx(y_out, PamLevels);
+            dec_val = PamLevels(dec_idx);
+            
+            DFE_Buf = [dec_val; DFE_Buf(1:end-1)];
+            
         end
-        
-        % --- C. 总输出与判决 ---
-        y_total = y_FFE + y_DFE;
-        ye_CLUT(i) = y_total;
-        
-        % Slicer: 判决为最近的 PamLevel
-        dec_idx = get_idx(y_total, PamLevels);
-        dec_val = PamLevels(dec_idx);
-        
-        % 更新 Buffer
-        DFE_Buf = [dec_val; DFE_Buf(1:end-1)];
     end
     
-    BER = 0; % 外部计算
-    ye_CLUT = ye_CLUT(:).'; % 保持行向量
-    
-    % 反归一化 (可选，为了匹配外部 BER 计算量级)
-    % ye_CLUT = ye_CLUT * scale_Tx; 
-    % 但通常外部 BER 计算会自动处理归一化，这里返回标准化的 ye 更安全
+    BER = 0; % Placeholder
+    ye_aligned = ye_aligned(:).';
+
 end
