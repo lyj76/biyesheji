@@ -1,24 +1,29 @@
-function [ye_out, params_out, idxTx] = LowRank_Volterra_Implementation_v2(xRx, xTx, xsym, NumPreamble_TDE, Rank, LearningRate, MaxEpochs, UseFeedback)
-    %% 0. 参数配置 (原地升级版)
-    % 默认参数改为 v3 的激进配置
-    if nargin < 5, Rank = 4; end % Upgrade to 4
-    if nargin < 6, LearningRate = [1e-3, 1e-4]; end 
-    if nargin < 7, MaxEpochs = 30; end
-    if nargin < 8, UseFeedback = true; end
+function [ye_out, params_out, idxTx] = LowRank_Volterra_Implementation_v3(xRx, xTx, xsym, NumPreamble_TDE, Config)
+    %% 0. 参数配置
+    if nargin < 5
+        Config = struct();
+    end
+    
+    Rank = get_field(Config, 'Rank', 4);
+    Volterra_Tap = get_field(Config, 'Tap', 15);
+    LearningRate = get_field(Config, 'LR', [1e-3, 1e-4]); 
+    MaxEpochs = get_field(Config, 'Epochs', 30);
+    UseFeedback = get_field(Config, 'Feedback', true);
+    UseWeightedLoss = get_field(Config, 'WeightedLoss', true);
     
     lr_p = LearningRate(1);
     lr_a = LearningRate(2);
     
-    Volterra_Tap = 15; % Upgrade to 15
-    UseWeightedLoss = true; % Enable Weighted Loss
+    %% 1. Backbone: FFE Baseline (Strictly matching v2 logic)
+    disp('    [Volterra-v3] Step 0: Linear FFE Baseline (Revert to v2 logic)...');
     
-    %% 1. Backbone: FFE Baseline (v2 Original Logic)
-    disp('    [Volterra-v2-Upgraded] Step 0: Linear FFE Baseline...');
+    % --- CRITICAL FIX: DO NOT NORMALIZE xRx/xTx HERE ---
+    % Let FFE_2pscenter handle raw signals, just like in v2.
     
     N1 = 111; 
     Lambda = 0.9999;
     
-    % 使用 v2 验证过完全可行的 FFE 调用
+    % FFE call matching v2
     [~, ye_lin_raw] = FFE_2pscenter(xRx, xTx, NumPreamble_TDE, N1, Lambda);
     
     M = 4;
@@ -38,14 +43,14 @@ function [ye_out, params_out, idxTx] = LowRank_Volterra_Implementation_v2(xRx, x
     idxTx_valid = idxTx(valid_mask);
     xTx_valid = xTx(idxTx_valid);
     
-    % 标准化
+    % 标准化 (Output-side only)
     scale_factor = std(xTx_valid);
     ye_lin_norm = ye_lin / scale_factor;
     ye_lin_norm = ye_lin_norm(:);
     xTx_norm = xTx_valid / scale_factor;
     xTx_norm = xTx_norm(:);
     
-    %% 2. Volterra Input
+    %% 2. 准备 Volterra 输入
     pad_len = floor(Volterra_Tap/2);
     ye_padded = [zeros(pad_len, 1); ye_lin_norm; zeros(pad_len, 1)];
     
@@ -56,7 +61,7 @@ function [ye_out, params_out, idxTx] = LowRank_Volterra_Implementation_v2(xRx, x
         U_Base(:, i) = ye_padded(i : i + N_Data - 1);
     end
     
-    %% 3. Init
+    %% 3. 初始化参数
     if UseFeedback
         Input_Dim = Volterra_Tap + 2; 
     else
@@ -66,8 +71,8 @@ function [ye_out, params_out, idxTx] = LowRank_Volterra_Implementation_v2(xRx, x
     P = randn(Input_Dim, Rank) * 0.05; 
     Alpha = zeros(Rank, 1); 
     
-    %% 4. Training
-    disp(['    [Volterra-v2-Upgraded] Training | Rank=', num2str(Rank), ' | Tap=', num2str(Volterra_Tap)]);
+    %% 4. 训练
+    disp(['    [Volterra-v3] Training | Rank=', num2str(Rank), ' | Tap=', num2str(Volterra_Tap)]);
     
     train_mask = idxTx_valid <= NumPreamble_TDE;
     
@@ -86,7 +91,7 @@ function [ye_out, params_out, idxTx] = LowRank_Volterra_Implementation_v2(xRx, x
     BatchSize = 128;
     NumBatches = floor(N_Train / BatchSize);
     
-    % Weighted Loss
+    % Sample Weights Logic
     SampleWeights = ones(N_Train, 1);
     if UseWeightedLoss
         Thrs = [-0.9, 0, 0.9]';
@@ -136,9 +141,9 @@ function [ye_out, params_out, idxTx] = LowRank_Volterra_Implementation_v2(xRx, x
         end
         loss_history(end+1) = epoch_loss / N_Train;
     end
-    disp(['    [Volterra-v2-Upgraded] Final Loss: ', num2str(loss_history(end))]);
+    disp(['    [Volterra-v3] Final Loss: ', num2str(loss_history(end))]);
     
-    %% 5. Inference
+    %% 5. 全局推断
     U_Test_Base = U_Base; 
     Y_Lin_Total = ye_lin_norm;
     N_Total = length(Y_Lin_Total);
@@ -177,6 +182,14 @@ function [ye_out, params_out, idxTx] = LowRank_Volterra_Implementation_v2(xRx, x
     
     params_out.P = P;
     params_out.Alpha = Alpha;
+end
+
+function val = get_field(struct, field, default)
+    if isfield(struct, field)
+        val = struct.(field);
+    else
+        val = default;
+    end
 end
 
 function dec = slice_scalar(y, levels, thr)

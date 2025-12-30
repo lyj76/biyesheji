@@ -30,15 +30,18 @@ if isempty(idx_test) || isempty(idx_train)
     return;
 end
 
-y_train = ye(idxTx <= NumPreamble_TDE);
-y_test  = ye(idxTx >  NumPreamble_TDE);
+    y_train = ye(idxTx <= NumPreamble_TDE);
+    y_test  = ye(idxTx >  NumPreamble_TDE);
 
-% affine calibration: xm = a*ye + b (least squares)
-xm_train = xm(idx_train);
-xm_test = xm(idx_test);
-A = [double(y_train), ones(length(y_train),1)];
-p = A \ double(xm_train);
-a = p(1);
+    y_train = y_train(:); % Force column
+    xm_train = xm(idx_train);
+    xm_train = xm_train(:); % Force column
+    
+    xm_test = xm(idx_test);
+    xm_test = xm_test(:);
+
+    A = [double(y_train), ones(length(y_train),1)];
+    p = A \ double(xm_train);a = p(1);
 b = p(2);
 
 xhat = a * double(y_test) + b;
