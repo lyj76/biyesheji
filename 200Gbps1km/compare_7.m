@@ -43,7 +43,7 @@ params.N1 = 111;
 params.N2 = 21;
 params.WL = 1;
 params.D1 = 25;
-params.D2 = 0;
+params.D2 = 3;
 params.WD = 1;
 params.K_Lin = 18;
 params.K_Vol = 90;
@@ -51,18 +51,18 @@ params.Lambda = 0.9999;
 params.scale = M/2;
 
 %% NN parameters
-params.FNN_InputLength = 101;
+params.FNN_InputLength = 91;
 params.FNN_HiddenSize = 64;
 params.FNN_LR = 0.001;
-params.FNN_Epochs = 30;
+params.FNN_Epochs = 50;
 params.FNN_DelayCandidates = -30:30;
 params.FNN_OffsetCandidates = [1 2];
 
-params.RNN_InputLength = 41;
+params.RNN_InputLength = 61;
 params.RNN_HiddenSize = 64;
 params.RNN_LR = 0.001;
 params.RNN_Epochs = 15;
-params.RNN_k = 2;
+params.RNN_k = 25;
 params.RNN_DelayCandidates = [8 10];
 params.RNN_OffsetCandidates = [1 2];
 
@@ -206,14 +206,27 @@ ylabel('SNR (dB)');
 title('Average SNR over files');
 
 figure('Name', 'Per-file BER (log scale)');
-semilogy(1:length(algo_list), BERall(1,:), 'o-', 'LineWidth', 1.2);
-hold on;
-semilogy(1:length(algo_list), BERall(2,:), 's--', 'LineWidth', 1.2);
+ber_plot = BERall.'; % [7 x 2] 矩阵
+
+% 1. 获取 bar 对象的句柄 b
+b = bar(ber_plot, 'grouped');
 grid on;
+
+% 2. 关键修复：设置对数坐标和柱状图的基准底线
+set(gca, 'YScale', 'log');
+% 强制让柱子从 1e-6 开始往上长，而不是从 0 或 1 开始
+% 这样 1e-4 的柱子就会显示为从 1e-6 到 1e-4 的高度
+for i = 1:length(b)
+    b(i).BaseValue = 1e-6; 
+end
+
+% 3. 调整坐标轴范围，确保显示美观
+ylim([1e-6 1]); 
+
 set(gca, 'XTick', 1:length(algo_list), 'XTickLabel', algo_list);
 xlabel('Algorithm');
 ylabel('BER (log scale)');
-legend(file_list, 'Location', 'best');
+legend(file_list, 'Location', 'northeast'); % 改一下图例位置防止遮挡
 title('BER per file');
 
 figure('Name', 'Per-file SNR');
