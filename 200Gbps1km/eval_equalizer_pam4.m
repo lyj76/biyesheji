@@ -8,6 +8,13 @@ function stats = eval_equalizer_pam4(ye, idxTx, xsym, xm, NumPreamble_TDE, M)
 idxTx = idxTx(:);
 ye = ye(:);
 
+% ensure equal length to avoid size mismatch
+if length(idxTx) ~= length(ye)
+    n = min(length(idxTx), length(ye));
+    idxTx = idxTx(1:n);
+    ye = ye(1:n);
+end
+
 % keep only valid indices/samples
 m = idxTx >= 1 & idxTx <= length(xsym) & isfinite(ye);
 idxTx = idxTx(m);

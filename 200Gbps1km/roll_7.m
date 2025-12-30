@@ -172,7 +172,7 @@ function [ye_use, idxTx, best_delay, best_offset] = run_equalizer(algo_id, xRx, 
                 params.FNN_LR, params.FNN_Epochs, params.FNN_DelayCandidates, params.FNN_OffsetCandidates);
             is_nn = true;
         case 'RNN'
-            [ye_valid, ~, valid_idx, best_delay, best_offset] = RNN_Implementation( ...
+            [ye, ~, valid_idx, best_delay, best_offset] = RNN_Implementation( ...
                 xRx, xTx, NumPreamble_TDE, params.RNN_InputLength, params.RNN_HiddenSize, ...
                 params.RNN_LR, params.RNN_Epochs, params.RNN_k, params.RNN_DelayCandidates, params.RNN_OffsetCandidates);
             is_nn = true;
@@ -181,10 +181,25 @@ function [ye_use, idxTx, best_delay, best_offset] = run_equalizer(algo_id, xRx, 
     end
 
     if is_nn
-        ye_use = ye_valid;
-        idxTx = valid_idx;
+        if ~exist('valid_idx', 'var') || isempty(valid_idx)
+            error('valid_idx missing for NN algorithm: %s', algo_id);
+        end
+        idxTx = valid_idx(:);
+        if exist('ye_valid', 'var') && ~isempty(ye_valid)
+            ye_use = ye_valid(:);
+        else
+            ye_use = ye(idxTx);
+        end
     else
-        ye_use = ye;
-        idxTx = (1:length(ye)).';
+        if ~exist('ye', 'var') || isempty(ye)
+            error('ye missing for classical algorithm: %s', algo_id);
+        end
+        [off, d0] = align_offset_delay_by_ser(ye, xsym, NumPreamble_TDE, M, -60:60);
+        if length(ye) > 1.5 * length(xsym)
+            ye_use = ye(off:2:end);
+        else
+            ye_use = ye(:);
+        end
+        idxTx = (1:length(ye_use)).' + d0;
     end
 end
