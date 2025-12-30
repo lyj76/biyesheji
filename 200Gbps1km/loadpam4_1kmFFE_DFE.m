@@ -62,7 +62,7 @@ for n1 = 1:length(file_list)
         %% equalizer inputs
         xTx = xs;
         xRx = yt_filter;
-        NumPreamble_TDE = 10000;
+        NumPreamble_TDE = 30000;
 
         %% equalizer parameters
         N1 = 111;
