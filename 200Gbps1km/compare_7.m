@@ -55,6 +55,8 @@ params.FNN_InputLength = 101;
 params.FNN_HiddenSize = 64;
 params.FNN_LR = 0.001;
 params.FNN_Epochs = 30;
+params.FNN_DelayCandidates = -30:30;
+params.FNN_OffsetCandidates = [1 2];
 
 params.RNN_InputLength = 41;
 params.RNN_HiddenSize = 64;
@@ -247,7 +249,9 @@ function [ye_use, idxTx, best_delay, best_offset] = run_equalizer(algo_id, xRx, 
             [~, ye] = CLUT_VDFE_Implementation(xRx, xTx, NumPreamble_TDE, params.N1, params.N2, params.D1, params.D2, params.WL, params.WD, M, params.K_Lin, params.K_Vol, params.Lambda);
             is_nn = false;
         case 'FNN'
-            [ye_valid, net, valid_idx, best_delay, best_offset] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, params.FNN_InputLength, params.FNN_HiddenSize, params.FNN_LR, params.FNN_Epochs);
+            [ye_valid, net, valid_idx, best_delay, best_offset] = FNN_Implementation( ...
+                xRx, xTx, NumPreamble_TDE, params.FNN_InputLength, params.FNN_HiddenSize, ...
+                params.FNN_LR, params.FNN_Epochs, params.FNN_DelayCandidates, params.FNN_OffsetCandidates);
             is_nn = true;
         case 'RNN'
             [ye, net, valid_idx, best_delay, best_offset] = RNN_Implementation(xRx, xTx, NumPreamble_TDE, params.RNN_InputLength, params.RNN_HiddenSize, params.RNN_LR, params.RNN_Epochs, params.RNN_k, params.RNN_DelayCandidates, params.RNN_OffsetCandidates);
