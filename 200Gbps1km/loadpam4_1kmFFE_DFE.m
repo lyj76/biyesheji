@@ -80,9 +80,9 @@ for n1 = 1:length(file_list)
 
         %% algorithm switching (uncomment one)
         clear ye ye_valid valid_idx net out stats d0 idxTx ye_use
-        algo_id = 'FFE'; % set manually to match the algorithm you run
+        %algo_id = 'FFE'; % set manually to match the algorithm you run
 
-         [hffe, ye] = FFE_2pscenter(xRx, xTx, NumPreamble_TDE, N1, 0.9999);
+       %  [hffe, ye] = FFE_2pscenter(xRx, xTx, NumPreamble_TDE, N1, 0.9999);
         % algo_id = 'FFE';
 
         % [hffe, ye] = VNLE2_2pscenter(xRx, xTx, NumPreamble_TDE, N1, N2, 0.9999, WL);
@@ -97,11 +97,11 @@ for n1 = 1:length(file_list)
         % [BER_clut, ye] = CLUT_VDFE_Implementation(xRx, xTx, NumPreamble_TDE, N1, N2, D1, D2, WL, WD, M, K_Lin, K_Vol, 0.9999);
         % algo_id = 'CLUT_VDFE';
 
-        % [ye_valid, net, valid_idx] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, 101, 64, 0.001, 30);
+         %[ye_valid, net, valid_idx] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, 101, 64, 0.001, 30);
         % algo_id = 'FNN';
 
-        % [ye, net, valid_idx] = RNN_Implementation(xRx, xTx, NumPreamble_TDE, 41, 64, 0.001, 15, 2, [8 10], [1 2]);
-        % algo_id = 'RNN';
+         [ye, net, valid_idx] = RNN_Implementation(xRx, xTx, NumPreamble_TDE, 41, 64, 0.001, 15, 2, [8 10], [1 2]);
+         algo_id = 'RNN';
 
         %% unified output mapping
         if isempty(algo_id)

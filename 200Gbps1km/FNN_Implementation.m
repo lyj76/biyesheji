@@ -1,4 +1,4 @@
-function [ye, net, valid_tx_indices] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, InputLength, HiddenSize, LearningRate, MaxEpochs, DelayCandidates, OffsetCandidates, ScanEpochs, ScanTrainSamples, ScanValSamples)
+function [ye, net, valid_tx_indices, best_delay, best_offset] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, InputLength, HiddenSize, LearningRate, MaxEpochs, DelayCandidates, OffsetCandidates, ScanEpochs, ScanTrainSamples, ScanValSamples)
 % FNN_Implementation_Centered: 中心窗结构的 FNN 均衡器
 %
 % 模仿 FFE_2pscenter 的数据构造逻辑：
@@ -69,6 +69,7 @@ function [ye, net, valid_tx_indices] = FNN_Implementation(xRx, xTx, NumPreamble_
     end
     
     disp(['    [FNN] Best Delay = ', num2str(best_delay), ', Linear MSE = ', num2str(best_mse)]);
+    best_offset = 0;
 
     %% 4. 构建训练数据集
     [X_Train_Raw, Y_Train_Raw, ~] = build_centered_dataset(Rx_Data_Pad, Tx_Data, InputLength, best_delay, NumPreamble_TDE, Padding);
