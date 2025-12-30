@@ -97,11 +97,11 @@ for n1 = 1:length(file_list)
         % [BER_clut, ye] = CLUT_VDFE_Implementation(xRx, xTx, NumPreamble_TDE, N1, N2, D1, D2, WL, WD, M, K_Lin, K_Vol, 0.9999);
         % algo_id = 'CLUT_VDFE';
 
-         %[ye_valid, net, valid_idx] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, 101, 64, 0.001, 30);
-        % algo_id = 'FNN';
+         [ye_valid, net, valid_idx] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, 101, 64, 0.001, 30);
+         algo_id = 'FNN';
 
-         [ye, net, valid_idx] = RNN_Implementation(xRx, xTx, NumPreamble_TDE, 41, 64, 0.001, 15, 2, [8 10], [1 2]);
-         algo_id = 'RNN';
+         %[ye, net, valid_idx] = RNN_Implementation(xRx, xTx, NumPreamble_TDE, 41, 64, 0.001, 15, 2, [8 10], [1 2]);
+         %algo_id = 'RNN';
 
         %% unified output mapping
         if isempty(algo_id)

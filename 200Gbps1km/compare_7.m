@@ -79,8 +79,12 @@ BERall = zeros(length(file_list), length(algo_list));
 SNRall = zeros(length(file_list), length(algo_list));
 FNN_BER_train = NaN(length(file_list), 1);
 FNN_BER_test = NaN(length(file_list), 1);
+FNN_SER_train = NaN(length(file_list), 1);
+FNN_SER_test = NaN(length(file_list), 1);
 RNN_BER_train = NaN(length(file_list), 1);
 RNN_BER_test = NaN(length(file_list), 1);
+RNN_SER_train = NaN(length(file_list), 1);
+RNN_SER_test = NaN(length(file_list), 1);
 FNN_best_delay = NaN(length(file_list), 1);
 FNN_best_offset = NaN(length(file_list), 1);
 RNN_best_delay = NaN(length(file_list), 1);
@@ -125,18 +129,40 @@ for n1 = 1:length(file_list)
             tt = eval_train_test_pam4(ye_use, idxTx, xsym, xm, NumPreamble_TDE, M);
             FNN_BER_train(n1) = tt.BER_train;
             FNN_BER_test(n1) = tt.BER_test;
+            FNN_SER_train(n1) = tt.SER_train;
+            FNN_SER_test(n1) = tt.SER_test;
             FNN_best_delay(n1) = best_delay;
             FNN_best_offset(n1) = best_offset;
             disp(['File ', num2str(n1), ', FNN train BER = ', num2str(tt.BER_train), ', test BER = ', num2str(tt.BER_test)]);
+            disp(['File ', num2str(n1), ', FNN train SER = ', num2str(tt.SER_train), ', test SER = ', num2str(tt.SER_test)]);
             disp(['File ', num2str(n1), ', FNN best_offset = ', num2str(best_offset), ', best_delay = ', num2str(best_delay)]);
+            dd = eval_nn_diagnostics(ye_use, idxTx, xsym, xm, NumPreamble_TDE, M);
+            disp(['File ', num2str(n1), ', FNN a_train = ', num2str(dd.a_train), ', b_train = ', num2str(dd.b_train), ...
+                ', a_test = ', num2str(dd.a_test), ', b_test = ', num2str(dd.b_test)]);
+            disp(['File ', num2str(n1), ', FNN mean/std train = ', num2str(dd.mean_train), '/', num2str(dd.std_train), ...
+                ', test = ', num2str(dd.mean_test), '/', num2str(dd.std_test)]);
+            disp(['File ', num2str(n1), ', FNN corr train = ', num2str(dd.corr_train), ', test = ', num2str(dd.corr_test)]);
+            disp(['File ', num2str(n1), ', FNN BER test using train thr = ', num2str(dd.ber_test_train_thr), ...
+                ', using test thr = ', num2str(dd.ber_test_test_thr)]);
         elseif strcmpi(algo_id, 'RNN')
             tt = eval_train_test_pam4(ye_use, idxTx, xsym, xm, NumPreamble_TDE, M);
             RNN_BER_train(n1) = tt.BER_train;
             RNN_BER_test(n1) = tt.BER_test;
+            RNN_SER_train(n1) = tt.SER_train;
+            RNN_SER_test(n1) = tt.SER_test;
             RNN_best_delay(n1) = best_delay;
             RNN_best_offset(n1) = best_offset;
             disp(['File ', num2str(n1), ', RNN train BER = ', num2str(tt.BER_train), ', test BER = ', num2str(tt.BER_test)]);
+            disp(['File ', num2str(n1), ', RNN train SER = ', num2str(tt.SER_train), ', test SER = ', num2str(tt.SER_test)]);
             disp(['File ', num2str(n1), ', RNN best_offset = ', num2str(best_offset), ', best_delay = ', num2str(best_delay)]);
+            dd = eval_nn_diagnostics(ye_use, idxTx, xsym, xm, NumPreamble_TDE, M);
+            disp(['File ', num2str(n1), ', RNN a_train = ', num2str(dd.a_train), ', b_train = ', num2str(dd.b_train), ...
+                ', a_test = ', num2str(dd.a_test), ', b_test = ', num2str(dd.b_test)]);
+            disp(['File ', num2str(n1), ', RNN mean/std train = ', num2str(dd.mean_train), '/', num2str(dd.std_train), ...
+                ', test = ', num2str(dd.mean_test), '/', num2str(dd.std_test)]);
+            disp(['File ', num2str(n1), ', RNN corr train = ', num2str(dd.corr_train), ', test = ', num2str(dd.corr_test)]);
+            disp(['File ', num2str(n1), ', RNN BER test using train thr = ', num2str(dd.ber_test_train_thr), ...
+                ', using test thr = ', num2str(dd.ber_test_test_thr)]);
         end
     end
 end
@@ -150,9 +176,13 @@ disp('Average performance over files:');
 disp(T);
 
 disp('FNN/RNN train-test BER per file:');
-T_nn = table(file_list(:), FNN_BER_train, FNN_BER_test, RNN_BER_train, RNN_BER_test, ...
+T_nn = table(file_list(:), ...
+    FNN_BER_train, FNN_BER_test, FNN_SER_train, FNN_SER_test, ...
+    RNN_BER_train, RNN_BER_test, RNN_SER_train, RNN_SER_test, ...
     FNN_best_offset, FNN_best_delay, RNN_best_offset, RNN_best_delay, ...
-    'VariableNames', {'File', 'FNN_BER_train', 'FNN_BER_test', 'RNN_BER_train', 'RNN_BER_test', ...
+    'VariableNames', {'File', ...
+    'FNN_BER_train', 'FNN_BER_test', 'FNN_SER_train', 'FNN_SER_test', ...
+    'RNN_BER_train', 'RNN_BER_test', 'RNN_SER_train', 'RNN_SER_test', ...
     'FNN_best_offset', 'FNN_best_delay', 'RNN_best_offset', 'RNN_best_delay'});
 disp(T_nn);
 
@@ -297,4 +327,100 @@ function stats = eval_train_test_pam4(ye, idxTx, xsym, xm, NumPreamble_TDE, M)
     stats.BER_test = ber_te;
     stats.SER_train = ser_tr;
     stats.SER_test = ser_te;
+end
+
+function dd = eval_nn_diagnostics(ye, idxTx, xsym, xm, NumPreamble_TDE, M)
+    idxTx = idxTx(:);
+    ye = ye(:);
+
+    m = idxTx >= 1 & idxTx <= length(xsym) & isfinite(ye);
+    idxTx = idxTx(m);
+    ye = ye(m);
+
+    idx_train = idxTx(idxTx <= NumPreamble_TDE);
+    idx_test  = idxTx(idxTx >  NumPreamble_TDE);
+
+    if isempty(idx_train) || isempty(idx_test)
+        dd.a_train = NaN; dd.b_train = NaN;
+        dd.a_test = NaN; dd.b_test = NaN;
+        dd.mean_train = NaN; dd.std_train = NaN;
+        dd.mean_test = NaN; dd.std_test = NaN;
+        dd.corr_train = NaN; dd.corr_test = NaN;
+        dd.ber_test_train_thr = NaN; dd.ber_test_test_thr = NaN;
+        return;
+    end
+
+    y_train = ye(idxTx <= NumPreamble_TDE);
+    y_test  = ye(idxTx >  NumPreamble_TDE);
+
+    xm_train = xm(idx_train);
+    xm_test = xm(idx_test);
+
+    A_tr = [double(y_train), ones(length(y_train),1)];
+    p_tr = A_tr \ double(xm_train);
+    a_tr = p_tr(1);
+    b_tr = p_tr(2);
+
+    A_te = [double(y_test), ones(length(y_test),1)];
+    p_te = A_te \ double(xm_test);
+    a_te = p_te(1);
+    b_te = p_te(2);
+
+    xhat_train = a_tr * double(y_train) + b_tr;
+    xhat_test_tr = a_tr * double(y_test) + b_tr;
+    xhat_test_te = a_te * double(y_test) + b_te;
+
+    [levels_tr, thr_tr] = find_levels_thr(xhat_train, M);
+    [levels_te, thr_te] = find_levels_thr(xhat_test_te, M);
+
+    ysym_test_tr = pamdemod(slice_levels(xhat_test_tr, levels_tr, thr_tr), M, 0, 'gray');
+    ysym_test_te = pamdemod(slice_levels(xhat_test_te, levels_te, thr_te), M, 0, 'gray');
+    xsym_test = xsym(idx_test);
+
+    [~, ber_tr_thr] = biterr(ysym_test_tr, xsym_test, log2(M));
+    [~, ber_te_thr] = biterr(ysym_test_te, xsym_test, log2(M));
+
+    dd.a_train = a_tr;
+    dd.b_train = b_tr;
+    dd.a_test = a_te;
+    dd.b_test = b_te;
+    dd.mean_train = mean(y_train);
+    dd.std_train = std(y_train);
+    dd.mean_test = mean(y_test);
+    dd.std_test = std(y_test);
+    dd.corr_train = corr_simple(y_train, xm_train);
+    dd.corr_test = corr_simple(y_test, xm_test);
+    dd.ber_test_train_thr = ber_tr_thr;
+    dd.ber_test_test_thr = ber_te_thr;
+end
+
+function [levels, thr] = find_levels_thr(x, M)
+    x = double(x(:));
+    [~, C] = kmeans(x, M, 'Replicates', 3);
+    levels = sort(C(:)).';
+    thr = (levels(1:M-1) + levels(2:M)) / 2;
+end
+
+function yq = slice_levels(y, levels, thr)
+    y = double(y);
+    yq = zeros(size(y));
+    yq(y < thr(1)) = levels(1);
+    for k = 2:length(thr)
+        yq(y >= thr(k-1) & y < thr(k)) = levels(k);
+    end
+    yq(y >= thr(end)) = levels(end);
+end
+
+function c = corr_simple(a, b)
+    a = double(a(:));
+    b = double(b(:));
+    m = isfinite(a) & isfinite(b);
+    a = a(m); b = b(m);
+    if numel(a) < 2
+        c = NaN;
+        return;
+    end
+    a = a - mean(a);
+    b = b - mean(b);
+    c = (a' * b) / sqrt((a' * a) * (b' * b) + eps);
 end
