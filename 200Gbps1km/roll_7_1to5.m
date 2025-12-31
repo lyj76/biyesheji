@@ -1,4 +1,4 @@
-%% Roll-off style comparison: BER vs noise (dB) for 7 equalizers
+%% Roll-off style comparison: BER vs noise (dB) for 7 equalizers (1dBm to 5dBm)
 clear;
 close all;
 
@@ -33,10 +33,8 @@ x_upsamp = upsample(xs, Osamp_factor);
 x_shape = conv(sqrt_ht, x_upsamp);
 x_shape = x_shape ./ sqrt(mean(abs(x_shape).^2));
 
-%% data list (different dB)
+%% data list (different dB) - Filtered for 1dBm to 5dBm
 file_list = { ...
-    'rop-1dBm_1.mat', ...
-    'rop0dBm_1.mat', ...
     'rop1dBm_1.mat', ...
     'rop2dBm_1.mat', ...
     'rop3dBm_1.mat', ...
@@ -97,7 +95,7 @@ algo_list = { ...
 BERall = zeros(length(file_list), length(algo_list));
 
 for n1 = 1:length(file_list)
-    disp(['Processing File: ', file_list{n1}]);
+    % disp(['Processing File: ', file_list{n1}]);
     load(file_list{n1}, 'ReData')
 
     ReData = -ReData;
@@ -127,7 +125,7 @@ for n1 = 1:length(file_list)
         stats = eval_equalizer_pam4(ye_use, idxTx, xsym, xm, NumPreamble_TDE, M);
         BERall(n1, a) = stats.BER;
 
-        disp(['File ', file_list{n1}, ', Algo ', algo_id, ', BER = ', num2str(stats.BER)]);
+        % disp(['File ', file_list{n1}, ', Algo ', algo_id, ', BER = ', num2str(stats.BER)]);
     end
 end
 
@@ -140,7 +138,7 @@ end
 grid on;
 xlabel('Noise (dB)');
 ylabel('BER (log scale)');
-title('BER vs Noise (dB) for 7 Equalizers');
+title('BER vs Noise (dB) for 7 Equalizers (1dBm to 5dBm)');
 legend(algo_list, 'Location', 'best');
 
 %% ---------------- local functions ----------------

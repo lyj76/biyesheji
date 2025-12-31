@@ -98,7 +98,7 @@ function [h,d,ye ] = LE_FFE2ps_centerDFE_new(xTx_in, xRx_in, NumPreamble_TDE, N1
     h = ha(1 : FilterLen_FFE);       % FFE 系数
     d = ha(1 + FilterLen_FFE : end); % DFE 系数
     
-    disp(['FFE+DFE Final MSE = ', num2str((abs(e(end))).^2)]);
+    % disp(['FFE+DFE Final MSE = ', num2str((abs(e(end))).^2)]);
     
     %% 3. 应用阶段 (Decision Directed Mode)
     % 使用训练好的 FFE 和 DFE 处理全量数据

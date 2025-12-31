@@ -73,7 +73,7 @@ function [h, ye] = VNLE2_2pscenter(xTx_in, xRx_in, NumPreamble_TDE, N1, N2, Lamb
         P = (P - k * (x_Total.' * P)) / Lambda;
     end
     
-    disp(['VNLE Training MSE = ', num2str((abs(e(NumPreamble_TDE))).^2)]);
+    % disp(['VNLE Training MSE = ', num2str((abs(e(NumPreamble_TDE))).^2)]);
     
     %% 3. 应用阶段 (Application Phase)
     

@@ -92,7 +92,7 @@ function [h, ye] = FFE_2pscenter(xTx_in, xRx_in, NumPreamble_TDE, N1, Lambda)
     end
     
     % 调试输出：训练阶段结束时的均方误差 (MSE)
-    disp(['Final Training MSE (最终训练误差) = ', num2str((abs(e(end))).^2)]);
+    % disp(['Final Training MSE (最终训练误差) = ', num2str((abs(e(end))).^2)]);
     
     %% 3. 应用阶段 (使用训练好的 h 对全量数据进行滤波)
     

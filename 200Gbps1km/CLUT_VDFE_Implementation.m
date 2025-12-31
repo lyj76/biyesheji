@@ -74,7 +74,7 @@ function [BER, ye_aligned] = CLUT_VDFE_Implementation(Rx_in, Tx_in, NumPreamble,
     EndIndex = StartIndex + TotalSyms - 1;
     
     % 调试计数
-    disp('Starting CLUT-VDFE Loop...');
+    % disp('Starting CLUT-VDFE Loop...');
     
     %% 主循环 (Hybrid RLS -> CLUT)
     
@@ -153,7 +153,7 @@ function [BER, ye_aligned] = CLUT_VDFE_Implementation(Rx_in, Tx_in, NumPreamble,
             
             % =========== 触发点：聚类与建表 ===========
             if loop_n == NumPreamble
-                disp('Training done. Switching to CLUT mode...');
+                % disp('Training done. Switching to CLUT mode...');
                 
                 % 提取系数
                 idx_cut = Dim_FFE_Lin + Dim_FFE_Vol;

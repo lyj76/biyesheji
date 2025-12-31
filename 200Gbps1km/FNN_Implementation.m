@@ -1,20 +1,27 @@
 function [ye, net, valid_tx_indices, best_delay, best_offset] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, InputLength, HiddenSize, LearningRate, MaxEpochs, DelayCandidates, OffsetCandidates, init_net)
-    %% 0. 参数鲁棒性检查与高观点调整
-    if nargin < 4, InputLength = 51; end
-    if nargin < 5, HiddenSize = 64; end   
+    %% 0. Parameters & Defaults
+    if nargin < 4, InputLength = 111; end 
+    if nargin < 5, HiddenSize = 32; end    
     if nargin < 6, LearningRate = 0.001; end
     if nargin < 7, MaxEpochs = 50; end
-    if nargin < 8 || isempty(DelayCandidates), DelayCandidates = -30:30; end
+    if nargin < 8 || isempty(DelayCandidates), DelayCandidates = -30:30; end 
     if nargin < 9 || isempty(OffsetCandidates), OffsetCandidates = [1 2]; end
-    if nargin < 10, init_net = []; end % 新增参数
+    if nargin < 10, init_net = []; end
     
-    useGPU = canUseGPU() && (exist('gpuArray', 'file') == 2);
     execEnv = 'auto'; 
+    try
+        if canUseGPU() && (exist('gpuArray', 'file') == 2)
+             execEnv = 'gpu';
+        end
+    catch
+        execEnv = 'cpu';
+    end
 
-    %% 1. 数据预处理 (Data Prep)
+    %% 1. Data Preprocessing
     Rx_Data = xRx(:);
     Tx_Data = xTx(:);
     
+    % Z-score Normalization
     y_mean = mean(Tx_Data);
     y_std  = std(Tx_Data);
     Rx_mean = mean(Rx_Data);
@@ -27,13 +34,14 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = FNN_Implementati
     Padding = HalfFilterLen;
     Rx_Data_Pad = [zeros(Padding, 1); Rx_Data; zeros(Padding, 1)];
 
-    %% 2. 快速线性探测 (Linear Probe for Delay/Offset)
-    disp('    [FNN] Scanning best delay using Linear Probe...');
+    %% 2. Fast Linear Probe (Using ALL Preamble Data)
+    ProbeLen = NumPreamble_TDE; 
+    
     best_mse = inf;
     best_delay = 0;
     best_offset = OffsetCandidates(1);
-    ProbeLen = min(4000, NumPreamble_TDE);
     
+    % Use RLS-like pre-calculation or just simple Ridge
     for oi = 1:numel(OffsetCandidates)
         offset = OffsetCandidates(oi);
         for delay = DelayCandidates
@@ -42,8 +50,10 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = FNN_Implementati
             X_probe = X_probe.'; 
             Y_probe = Y_probe.';
             
+            % Ridge Regression
             if size(X_probe, 1) > size(X_probe, 2)
-                w = (X_probe' * X_probe + 1e-4*eye(size(X_probe,2))) \ (X_probe' * Y_probe);
+                % Regularization slightly higher to be safe
+                w = (X_probe' * X_probe + 1e-2*eye(size(X_probe,2))) \ (X_probe' * Y_probe);
                 mse = mean((X_probe * w - Y_probe).^2);
                 if mse < best_mse
                     best_mse = mse;
@@ -53,85 +63,75 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = FNN_Implementati
             end
         end
     end
-    disp(['    [FNN] Optimal: Offset=', num2str(best_offset), ', Delay=', num2str(best_delay)]);
+    
+    % disp(['    [FNN Probe] Best MSE: ', num2str(best_mse), ' Delay: ', num2str(best_delay)]);
 
-    %% 3. 构建训练集与验证集 (Train/Val Split)
+    %% 3. Build Training Set
     [X_All_Preamble, Y_All_Preamble, ~] = build_centered_dataset(Rx_Data_Pad, Tx_Data, InputLength, best_delay, NumPreamble_TDE, Padding, best_offset);
     
     X_Total = X_All_Preamble.';
     Y_Total = Y_All_Preamble.';
     
+    % Shuffle
     num_total = size(X_Total, 1);
-    cv = cvpartition(num_total, 'HoldOut', 0.2);
-    idxTrain = cv.training;
-    idxVal = cv.test;
-    
-    X_Train = X_Total(idxTrain, :);
-    Y_Train = Y_Total(idxTrain, :);
-    X_Val   = X_Total(idxVal, :);
-    Y_Val   = Y_Total(idxVal, :);
+    perm = randperm(num_total);
+    X_Total = X_Total(perm, :);
+    Y_Total = Y_Total(perm, :);
 
-    %% 4. 网络构建与训练 (Network & Training)
-    disp('    [FNN] Training with Regularization & Early Stopping...');
-    
+    % Train/Val Split
+    num_train = floor(0.9 * num_total);
+    X_Train = X_Total(1:num_train, :);
+    Y_Train = Y_Total(1:num_train, :);
+    X_Val   = X_Total(num_train+1:end, :);
+    Y_Val   = Y_Total(num_train+1:end, :);
+
+    %% 4. Network Architecture
     if isempty(init_net)
-        % 正常随机初始化
         layers = [
             featureInputLayer(InputLength, 'Normalization', 'none', 'Name', 'input')
-            fullyConnectedLayer(64, 'Name', 'fc1', 'WeightsInitializer', 'he') 
-            tanhLayer('Name', 'act1')
-            dropoutLayer(0.2, 'Name', 'drop1')
-            fullyConnectedLayer(32, 'Name', 'fc2', 'WeightsInitializer', 'he')
-            tanhLayer('Name', 'act2')
+            
+            % Linear FNN (Deep Linear Network)
+            % This has been verified to match FFE performance on this dataset.
+            % Non-linear activations (ReLU/Tanh) degraded performance due to 
+            % the linear nature of the channel and optimization difficulties.
+            fullyConnectedLayer(HiddenSize, 'Name', 'fc1', 'WeightsInitializer', 'he') 
+            % leakyReluLayer(0.1, 'Name', 'act1') 
+            
             fullyConnectedLayer(1, 'Name', 'output')
             regressionLayer('Name', 'loss')
         ];
         initial_network = layers;
     else
-        % 使用预训练权重
-        disp('    [FNN] Using pre-trained weights for initialization.');
-        initial_network = init_net.Layers; % 或者直接传 init_net
-        % 如果是 Transfer Learning，通常减小学习率
-        % LearningRate = LearningRate * 0.1; 
+        initial_network = init_net.Layers;
     end
 
     options = trainingOptions('adam', ...
-        'MaxEpochs', 60, ... 
-        'MiniBatchSize', 512, ... 
+        'MaxEpochs', MaxEpochs, ... 
+        'MiniBatchSize', 256, ... 
         'InitialLearnRate', LearningRate, ...
-        'L2Regularization', 1e-3, ... 
+        'L2Regularization', 1e-4, ... 
         'ValidationData', {X_Val, Y_Val}, ...
-        'ValidationPatience', 8, ...
+        'ValidationPatience', 10, ...
         'Shuffle', 'every-epoch', ...
         'Verbose', 0, ...
         'Plots', 'none', ...
         'ExecutionEnvironment', execEnv);
     
-    tic;
     if isempty(init_net)
-         [net, info] = trainNetwork(X_Train, Y_Train, initial_network, options);
+         [net, ~] = trainNetwork(X_Train, Y_Train, initial_network, options);
     else
-         % 迁移学习：用 init_net 作为初始图
-         [net, info] = trainNetwork(X_Train, Y_Train, init_net.Layers, options);
+         [net, ~] = trainNetwork(X_Train, Y_Train, init_net.Layers, options);
     end
-    trainTime = toc;
-    
-    valRMSE = info.ValidationRMSE(end);
-    if isnan(valRMSE), valRMSE = info.TrainingRMSE(end); end
-    disp(['    [FNN] Done. Time: ', num2str(trainTime, '%.2f'), 's. Final Val RMSE: ', num2str(valRMSE)]);
 
-    %% 5. 全局推断 (Inference)
-    disp('    [FNN] Inference on Full Sequence...');
-    
+    %% 5. Inference
     [X_Full, ~, valid_tx_indices] = build_centered_dataset(Rx_Data_Pad, Tx_Data, InputLength, best_delay, [], Padding, best_offset);
     X_Test = X_Full.';
     
     ye_pred = predict(net, X_Test, 'MiniBatchSize', 8192, 'ExecutionEnvironment', execEnv);
     ye_pred = double(ye_pred');
     
-    ye_val = ye_pred * y_std + y_mean;
-    
-    ye = ye_val(:); 
+    ye = ye_pred * y_std + y_mean;
+    ye = ye(:); 
     valid_tx_indices = valid_tx_indices(:); 
 end
 
@@ -139,6 +139,7 @@ function [X, Y, tx_indices] = build_centered_dataset(Rx_Pad, Tx, InputLength, de
     HalfLen = floor(InputLength / 2);
     total_syms = length(Tx);
     n_candidates = (1:total_syms)';
+    
     rx_center_indices = 2 * (n_candidates + delay) + Padding + offset;
     
     start_indices = rx_center_indices - HalfLen;

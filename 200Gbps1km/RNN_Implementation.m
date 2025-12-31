@@ -35,10 +35,10 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
         d = gpuDevice;
         if d.DeviceAvailable
             execEnv = 'gpu';
-            disp('    [AR-RNN] GPU Acceleration: Enabled (CUDA).');
+            % disp('    [AR-RNN] GPU Acceleration: Enabled (CUDA).');
         end
     catch
-        disp('    [AR-RNN] GPU not available. Using CPU.');
+        % disp('    [AR-RNN] GPU not available. Using CPU.');
     end
 
     %% ===== preprocess & normalize =====
@@ -52,7 +52,7 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
     Tx_n = (Tx - y_mean) / y_std;
 
     %% ===== 1) scan offset/delay (linear probe) =====
-    disp('    [AR-RNN] Scanning best offset/delay using Linear Probe...');
+    % disp('    [AR-RNN] Scanning best offset/delay using Linear Probe...');
 
     best_ser = inf;
     best_mse = inf;
@@ -113,16 +113,16 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
         end
     end
 
-    disp(['    [AR-RNN] Selected Offset=',num2str(best_offset), ...
-          ', Delay=',num2str(best_delay),', SER=',num2str(best_ser,'%.4g'), ...
-          ', Linear MSE=',num2str(best_mse,'%.4g')]);
+    % disp(['    [AR-RNN] Selected Offset=',num2str(best_offset), ...
+    %       ', Delay=',num2str(best_delay),', SER=',num2str(best_ser,'%.4g'), ...
+    %       ', Linear MSE=',num2str(best_mse,'%.4g')]);
 
     if ~isempty(ForceDelay)
-        disp(['    [AR-RNN] ForceDelay override: ', num2str(best_delay), ' -> ', num2str(ForceDelay)]);
+        % disp(['    [AR-RNN] ForceDelay override: ', num2str(best_delay), ' -> ', num2str(ForceDelay)]);
         best_delay = ForceDelay;
     end
     if ~isempty(ForceOffset)
-        disp(['    [AR-RNN] ForceOffset override: ', num2str(best_offset), ' -> ', num2str(ForceOffset)]);
+        % disp(['    [AR-RNN] ForceOffset override: ', num2str(best_offset), ' -> ', num2str(ForceOffset)]);
         best_offset = ForceOffset;
     end
 
@@ -154,7 +154,7 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
     Y_Train = Yar.';   % [Ns x 1]
 
     %% ===== 4) network (MLP) =====
-    disp('    [AR-RNN] Configuring AR-MLP Network (Eq.(2) style)...');
+    % disp('    [AR-RNN] Configuring AR-MLP Network (Eq.(2) style)...');
 
     layers = [
         featureInputLayer(InputLength + k, 'Normalization','none', 'Name','input')
@@ -180,14 +180,14 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
         'ExecutionEnvironment', execEnv);
 
     %% ===== 5) train =====
-    disp(['    [AR-RNN] Training Start (Samples=',num2str(size(X_Train,1)), ...
-          ', Epochs=',num2str(MaxEpochs), ')...']);
+    % disp(['    [AR-RNN] Training Start (Samples=',num2str(size(X_Train,1)), ...
+    %       ', Epochs=',num2str(MaxEpochs), ')...']);
     tic;
     net = trainNetwork(X_Train, Y_Train, layers, options);
-    disp(['    [AR-RNN] Training Finished in ', num2str(toc,'%.3f'), ' s']);
+    % disp(['    [AR-RNN] Training Finished in ', num2str(toc,'%.3f'), ' s']);
 
     %% ===== 6) inference: free-running, manual forward + HARD decision feedback =====
-    disp('    [AR-RNN] Inference on Full Sequence (free-running, manual forward + hard feedback)...');
+    % disp('    [AR-RNN] Inference on Full Sequence (free-running, manual forward + hard feedback)...');
 
     % ---- extract weights by name (robust) ----
     L = net.Layers;
@@ -205,7 +205,7 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
     [~, C] = kmeans(Ytr, 4, 'Replicates', 5);
     pam4_levels = sort(C(:)).';                 % 1x4
     thr = (pam4_levels(1:3) + pam4_levels(2:4))/2; % 1x3
-    disp(['    [AR-RNN] learned PAM4 levels (norm) = ', mat2str(pam4_levels,4)]);
+    % disp(['    [AR-RNN] learned PAM4 levels (norm) = ', mat2str(pam4_levels,4)]);
 
     tanhf = @(z) tanh(z);
 
