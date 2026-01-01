@@ -151,33 +151,19 @@ markers = {'o-', 's-', 'd-', '^-', 'v-', '>-', 'p-', 'h-'};
 % Handle BER=0 for log plot
 BER_plot = BERall;
 min_val = 1e-6; % Floor for 0 BER
-BER_plot(BER_plot == 0) = min_val; 
 
-% Spline Interpolation for Smooth Waterfall Plot
-noise_fine = min(noise_dB):0.1:max(noise_dB); % Finer grid
-BER_smooth = zeros(length(noise_fine), length(algo_list));
+% Direct Line Plot (No Spline)
 h_plots = gobjects(length(algo_list), 1); % Store handles for legend
 
 hold on;
 for a = 1:length(algo_list)
-    % Log-domain interpolation for better BER curve shape
-    % Replace 0 with min_val for log10
     y_data = BERall(:, a);
     y_data(y_data == 0) = min_val; 
     
-    % Interpolate in log10 domain
-    y_log = log10(y_data);
-    y_log_smooth = interp1(noise_dB, y_log, noise_fine, 'pchip'); % pchip avoids overshoots
-    y_smooth = 10.^y_log_smooth;
-    
-    % Plot smooth line (Capture handle for legend)
-    h_plots(a) = semilogy(noise_fine, y_smooth, '-', 'Color', colors(a,:), 'LineWidth', 1.5);
-    
-    % Plot original points markers (Hide from legend)
-    semilogy(noise_dB, y_data, markers{a}, ...
-        'Color', colors(a,:), 'LineWidth', 1.0, 'MarkerSize', 6, ...
-        'MarkerFaceColor', colors(a,:), 'LineStyle', 'none', ...
-        'HandleVisibility', 'off'); 
+    % Plot straight line with markers (Capture handle for legend)
+    h_plots(a) = semilogy(noise_dB, y_data, [markers{a}], ...
+        'Color', colors(a,:), 'LineWidth', 1.5, 'MarkerSize', 7, ...
+        'MarkerFaceColor', colors(a,:));
 end
 
 % Add baseline threshold line (e.g. HD-FEC limit 3.8e-3)
@@ -195,7 +181,7 @@ if max_ber == 0, max_ber = 1e-2; end
 ylim([min_val max_ber * 1.1]); % Tight adaptive limit (10% margin)
 
 % Add annotation for 0 BER
-text(max(noise_dB)-1, min_val*1.2, 'Floor: BER=0', 'FontSize', 8, 'Color', 'k');
+text(max(noise_dB)-0.5, min_val*1.2, 'Floor: BER=0', 'FontSize', 8, 'Color', 'k');
 
 %% ---------------- local functions ----------------
 function [ye_use, idxTx, best_delay, best_offset] = run_equalizer(algo_id, xRx, xTx, xsym, NumPreamble_TDE, M, params)
