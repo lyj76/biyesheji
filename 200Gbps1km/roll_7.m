@@ -1,6 +1,6 @@
 %% Roll-off style comparison: BER vs noise (dB) for 7 equalizers
 clear;
-close all;
+close all;1
 
 %% add paths
 addpath('fns');
@@ -91,7 +91,8 @@ algo_list = { ...
     'DP_VFFE_VDFE', ...
     'CLUT_VDFE', ...
     'FNN', ...
-    'RNN' ...
+    'RNN_WD', ...
+    'RNN_AR' ...
 };
 
 BERall = zeros(length(file_list), length(algo_list));
@@ -131,17 +132,48 @@ for n1 = 1:length(file_list)
     end
 end
 
-%% plot: BER vs noise dB
-figure('Name', 'BER vs Noise (dB)');
+%% plot: BER vs ROP (dBm)
+figure('Name', 'BER vs ROP');
+
+% Color Palette (High Contrast)
+% 1:FFE(Blue), 2:VNLE(Red), 3:LE_FFE_DFE(Yellow), 4:DP_VFFE(Purple)
+% 5:CLUT(Green), 6:FNN(Cyan), 7:RNN_WD(Black), 8:RNN_AR(Orange)
+colors = [
+    0 0.4470 0.7410;  % Blue
+    0.8500 0.3250 0.0980; % Red
+    0.9290 0.6940 0.1250; % Yellow
+    0.4940 0.1840 0.5560; % Purple
+    0.4660 0.6740 0.1880; % Green
+    0.3010 0.7450 0.9330; % Cyan
+    0 0 0;                % Black (RNN_WD)
+    1 0.5 0               % Orange (RNN_AR) - Distinct from Blue
+];
+markers = {'o-', 's-', 'd-', '^-', 'v-', '>-', 'p-', 'h-'};
+
+% Handle BER=0 for log plot
+BER_plot = BERall;
+min_ber_floor = 1e-6;
+BER_plot(BER_plot == 0) = min_ber_floor; 
+
 hold on;
 for a = 1:length(algo_list)
-    semilogy(noise_dB, BERall(:, a), 'o-', 'LineWidth', 1.5);
+    semilogy(noise_dB, BER_plot(:, a), markers{a}, ...
+        'Color', colors(a,:), 'LineWidth', 1.5, 'MarkerSize', 7, ...
+        'MarkerFaceColor', colors(a,:));
 end
+
+% Add baseline threshold line (e.g. HD-FEC limit 3.8e-3)
+yline(3.8e-3, '--k', 'HD-FEC (3.8e-3)');
+
 grid on;
-xlabel('Noise (dB)');
+xlabel('Received Optical Power (dBm)');
 ylabel('BER (log scale)');
-title('BER vs Noise (dB) for 7 Equalizers');
-legend(algo_list, 'Location', 'best');
+title('BER Performance vs ROP');
+legend(algo_list, 'Location', 'sw', 'FontSize', 10);
+ylim([min_ber_floor/2 1]);
+
+% Add annotation for 0 BER
+text(min(noise_dB), min_ber_floor*1.2, 'Note: BER=0 plotted as 1e-6', 'FontSize', 8, 'Color', 'k');
 
 %% ---------------- local functions ----------------
 function [ye_use, idxTx, best_delay, best_offset] = run_equalizer(algo_id, xRx, xTx, xsym, NumPreamble_TDE, M, params)
@@ -167,14 +199,21 @@ function [ye_use, idxTx, best_delay, best_offset] = run_equalizer(algo_id, xRx, 
             [~, ye] = CLUT_VDFE_Implementation(xRx, xTx, NumPreamble_TDE, params.N1, params.N2, params.D1, params.D2, params.WL, params.WD, M, params.K_Lin, params.K_Vol, params.Lambda);
             is_nn = false;
         case 'FNN'
-            [ye_valid, ~, valid_idx, best_delay, best_offset] = FNN_Implementation( ...
+            [ye_valid, ~, valid_idx, best_delay, best_offset] = FNN_FS2pscenter( ...
                 xRx, xTx, NumPreamble_TDE, params.FNN_InputLength, params.FNN_HiddenSize, ...
                 params.FNN_LR, params.FNN_Epochs, params.FNN_DelayCandidates, params.FNN_OffsetCandidates);
             is_nn = true;
-        case 'RNN'
-            [ye, ~, valid_idx, best_delay, best_offset] = RNN_Implementation( ...
-                xRx, xTx, NumPreamble_TDE, params.RNN_InputLength, params.RNN_HiddenSize, ...
-                params.RNN_LR, params.RNN_Epochs, params.RNN_k, params.RNN_DelayCandidates, params.RNN_OffsetCandidates);
+        case 'RNN_WD'
+            % Windowed-Decision RNN (Hard Feedback) - High Performance
+            [ye, ~, valid_idx, best_delay, best_offset] = RNN_WD_Implementation( ...
+                xRx, xTx, NumPreamble_TDE, 101, 32, ...
+                params.RNN_LR, 30, 25, params.RNN_DelayCandidates, params.RNN_OffsetCandidates);
+            is_nn = true;
+        case 'RNN_AR'
+            % Auto-Regressive RNN (LSTM/Soft Feedback)
+            [ye, ~, valid_idx, best_delay, best_offset] = RNN_AR_Implementation( ...
+                xRx, xTx, NumPreamble_TDE, 61, 64, ...
+                params.RNN_LR, 20, 5, params.RNN_DelayCandidates, params.RNN_OffsetCandidates);
             is_nn = true;
         otherwise
             error('Unknown algorithm: %s', algo_id);

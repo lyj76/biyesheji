@@ -48,6 +48,10 @@ xhat = a * double(y_test) + b;
 ysym_test = pamdemod(xhat, M, 0, 'gray');
 xsym_test = xsym(idx_test);
 
+% Force column vectors
+ysym_test = ysym_test(:);
+xsym_test = xsym_test(:);
+
 [~, ber] = biterr(ysym_test, xsym_test, log2(M));
 [~, ser] = symerr(ysym_test, xsym_test);
 

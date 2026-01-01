@@ -75,25 +75,51 @@ stats_ffe = eval_equalizer_pam4(ye_use_ffe, idxTx_ffe, xsym, xm, NumPreamble_TDE
 disp(['FFE BER: ', num2str(stats_ffe.BER)]);
 disp(['FFE Optimal Delay (d0): ', num2str(d0_ffe)]);
 
-%% --- 2. Run FNN (Standard) ---
+%% --- 2. Run FNN (FS-2sps) ---
 disp('------------------------------------------------');
-disp('Running FNN (Standard)...');
-InputLength = 111; 
-HiddenSize = 16;
+disp('Running FNN (FS-2sps)...');
+
+TapLen = 111;
+HiddenSize = 64;
 LearningRate = 0.001;
-MaxEpochs = 50;
+MaxEpochs = 60;
+
+DelayCandidates = -60:60;   
+PhaseCandidates = [0 1];
 
 tic;
-[ye_fnn, ~, valid_idx_fnn, best_delay_fnn, best_offset_fnn] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, ...
-    InputLength, HiddenSize, LearningRate, MaxEpochs);
+[ye_fnn, ~, valid_idx_fnn, best_delay_fnn, best_phase_fnn] = FNN_FS2pscenter( ...
+    xRx, xTx, NumPreamble_TDE, TapLen, HiddenSize, LearningRate, MaxEpochs, DelayCandidates, PhaseCandidates);
 time_fnn = toc;
-disp(['FNN Time: ', num2str(time_fnn), 's']);
-disp(['FNN Found Delay: ', num2str(best_delay_fnn), ', Offset: ', num2str(best_offset_fnn)]);
 
+disp(['FNN Time: ', num2str(time_fnn), 's']);
+disp(['FNN Found Delay(samp): ', num2str(best_delay_fnn), ', Phase: ', num2str(best_phase_fnn)]);
+
+% 直接用 valid_idx_fnn 当作 Tx 索引
 idxTx_fnn = valid_idx_fnn(:);
 ye_use_fnn = ye_fnn(:);
 
-stats_fnn = eval_equalizer_pam4(ye_use_fnn, idxTx_fnn, xsym, xm, NumPreamble_TDE, M);
-disp(['FNN (Standard) BER: ', num2str(stats_fnn.BER)]);
+stats_fnn = safe_eval_equalizer_pam4(ye_use_fnn, idxTx_fnn, xsym, xm, NumPreamble_TDE, M);
+disp(['FNN (FS-2sps) BER: ', num2str(stats_fnn.BER)]);
+
+% disp('------------------------------------------------');
+% disp('Running FNN (Standard)...');
+% InputLength = 111; 
+% HiddenSize = 32;
+% LearningRate = 0.001;
+% MaxEpochs = 50;
+% 
+% tic;
+% [ye_fnn, ~, valid_idx_fnn, best_delay_fnn, best_offset_fnn] = FNN_Implementation(xRx, xTx, NumPreamble_TDE, ...
+%     InputLength, HiddenSize, LearningRate, MaxEpochs);
+% time_fnn = toc;
+% disp(['FNN Time: ', num2str(time_fnn), 's']);
+% disp(['FNN Found Delay: ', num2str(best_delay_fnn), ', Offset: ', num2str(best_offset_fnn)]);
+% 
+% idxTx_fnn = valid_idx_fnn(:);
+% ye_use_fnn = ye_fnn(:);
+% 
+% stats_fnn = eval_equalizer_pam4(ye_use_fnn, idxTx_fnn, xsym, xm, NumPreamble_TDE, M);
+% disp(['FNN (Standard) BER: ', num2str(stats_fnn.BER)]);
 
 disp('------------------------------------------------');
