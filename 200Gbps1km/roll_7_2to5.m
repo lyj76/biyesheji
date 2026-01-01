@@ -1,6 +1,6 @@
-%% Roll-off style comparison: BER vs noise (dB) for 7 equalizers
+0%% Roll-off style comparison: BER vs ROP (dBm) for 7 equalizers (2dBm to 5dBm)
 clear;
-close all;1
+close all;
 
 %% add paths
 addpath('fns');
@@ -34,10 +34,8 @@ x_shape = conv(sqrt_ht, x_upsamp);
 x_shape = x_shape ./ sqrt(mean(abs(x_shape).^2));
 
 %% data list (different dB)
+% Modified to only include 2dBm to 5dBm
 file_list = { ...
-    'rop-1dBm_1.mat', ...
-    'rop0dBm_1.mat', ...
-    'rop1dBm_1.mat', ...
     'rop2dBm_1.mat', ...
     'rop3dBm_1.mat', ...
     'rop5dBm_1.mat' ...
@@ -133,7 +131,7 @@ for n1 = 1:length(file_list)
 end
 
 %% plot: BER vs ROP (dBm)
-figure('Name', 'BER vs ROP');
+figure('Name', 'BER vs ROP (2dBm - 5dBm)');
 
 % Color Palette (High Contrast)
 % 1:FFE(Blue), 2:VNLE(Red), 3:LE_FFE_DFE(Yellow), 4:DP_VFFE(Purple)
@@ -188,7 +186,7 @@ yline(3.8e-3, '--k', 'HD-FEC (3.8e-3)', 'LabelHorizontalAlignment', 'left');
 grid on;
 xlabel('Received Optical Power (dBm)');
 ylabel('BER (log scale)');
-title('BER Performance vs ROP');
+title('BER Performance vs ROP (2dBm to 5dBm)');
 legend(h_plots, algo_list, 'Location', 'northeast', 'FontSize', 10);
 
 % Smart Y-limit
