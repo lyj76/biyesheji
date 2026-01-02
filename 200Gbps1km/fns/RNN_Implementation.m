@@ -230,7 +230,11 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
     
     % --- Quick Train BER Check ---
     ye_tr_check = ye_fb(1:Ntrain);
+    ye_tr_check = ye_tr_check(:); % Force column
+    
     y_tr_true_q = hard_slice_pam4(Yall(1:Ntrain), pam4_levels, thr);
+    y_tr_true_q = y_tr_true_q(:); % Force column
+    
     % Map levels to 0,1,2,3 for biterr
     % Simple map: level(1)->0, level(2)->1, etc.
     [~, map_idx_pred] = min(abs(ye_tr_check - pam4_levels), [], 2);
