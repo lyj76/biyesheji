@@ -77,8 +77,18 @@ for f_idx = 1:length(file_list)
     %% --- 1. Powerful RNN (Original Version) ---
     disp('Running RNN (Original Powerful Version)...');
     tic;
-    % InputLength=101, Hidden=64, k=2, Epochs=50
-    [ye_rnn, ~, idx_rnn, d_rnn, off_rnn] = RNN_Implementation(xRx, xTx, NumPreamble_TDE, 101, 64, 0.001, 50, 2, -30:30, [1 2]);
+    
+    % Force Delay/Offset based on old successful logs
+    if contains(file_name, 'rop3dBm')
+        force_delay = 8; force_offset = 1;
+    elseif contains(file_name, 'rop5dBm')
+        force_delay = 10; force_offset = 1;
+    else
+        force_delay = []; force_offset = [];
+    end
+    
+    % InputLength=101, Hidden=64, k=2, Epochs=50, Force Delay
+    [ye_rnn, ~, idx_rnn, d_rnn, off_rnn] = RNN_Implementation(xRx, xTx, NumPreamble_TDE, 101, 64, 0.001, 50, 2, -30:30, [1 2], [], [], force_delay, force_offset);
     t_rnn = toc;
     stats_rnn = eval_equalizer_pam4(ye_rnn(idx_rnn), idx_rnn, xsym, xm, NumPreamble_TDE, M);
 
