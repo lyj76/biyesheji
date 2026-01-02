@@ -161,9 +161,11 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
 
         fullyConnectedLayer(HiddenSize, 'Name','fc1')
         tanhLayer('Name','tanh1')
+        dropoutLayer(0.1, 'Name', 'drop1') % Add Dropout
 
         fullyConnectedLayer(32, 'Name','fc2')
         tanhLayer('Name','tanh2')
+        dropoutLayer(0.1, 'Name', 'drop2') % Add Dropout
 
         fullyConnectedLayer(1, 'Name','out')
         regressionLayer('Name','loss')
