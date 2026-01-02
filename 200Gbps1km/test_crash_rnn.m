@@ -44,6 +44,37 @@ for i = 1:length(SNR_Sweep)
     disp(['SNR=' num2str(snr) ' | FFE=' num2str(ber_ffe(i)) ' | WD=' num2str(ber_wd(i)) ' | AR=' num2str(ber_ar(i))]);
 end
 
+%% Plot Results
+figure('Name', 'RNN Crash Test: BER vs SNR');
+
+% Handle BER=0 for log plot
+min_val = 1e-6;
+p_ffe = ber_ffe; p_ffe(p_ffe==0) = min_val;
+p_wd  = ber_wd;  p_wd(p_wd==0)  = min_val;
+p_ar  = ber_ar;  p_ar(p_ar==0)  = min_val;
+
+semilogy(SNR_Sweep, p_ffe, 'b-o', 'LineWidth', 1.5, 'MarkerSize', 7); hold on;
+semilogy(SNR_Sweep, p_wd,  'k-s', 'LineWidth', 1.5, 'MarkerSize', 7, 'MarkerFaceColor', 'k');
+semilogy(SNR_Sweep, p_ar,  'r-^', 'LineWidth', 1.5, 'MarkerSize', 7, 'MarkerFaceColor', 'r');
+
+yline(3.8e-3, '--k', 'HD-FEC', 'LabelHorizontalAlignment', 'left');
+
+grid on;
+xlabel('SNR (dB)');
+ylabel('BER (log scale)');
+title({'RNN Robustness Test (Synthetic Channel)'; 'Strong ISI + Volterra Nonlinearity'});
+legend('FFE (Linear)', 'RNN-WD (Hard FB)', 'RNN-AR (Soft FB)', 'Location', 'northeast');
+set(gca, 'XDir', 'reverse'); % High SNR on left
+ylim([min_val 1]);
+
+% Add annotation for 0 BER
+text(max(SNR_Sweep)-1, min_val*1.5, 'Floor: BER=0', 'FontSize', 8, 'Color', 'k');
+
+% Print Channel Info
+fprintf('\n--- Channel Model ---\n');
+fprintf('ISI Coefficients: %s\n', mat2str(h_isi, 3));
+fprintf('Nonlinearity: y = x + 0.1*x^2 - 0.05*x^3\n');
+
 function ber = eval_ber_local(ye, idx, tx_sym, n_train, M)
     mask = (idx > n_train) & (idx <= length(tx_sym));
     if sum(mask) == 0, ber = 1; return; end

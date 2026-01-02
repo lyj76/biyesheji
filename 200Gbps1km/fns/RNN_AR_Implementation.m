@@ -1,20 +1,18 @@
 function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_AR_Implementation( ...
     xRx, xTx, NumPreamble_TDE, InputLength, HiddenSize, LearningRate, MaxEpochs, k, ...
     DelayCandidates, OffsetCandidates)
-% RNN_AR_Implementation (Auto-Regressive MLP with Soft Feedback)
-%   Structure: Residual Network with SOFT Output Feedback
-%   Contrast: WD-RNN uses HARD Decision Feedback.
-%
+% RNN_AR_Implementation (Direct Prediction - No Residual)
+%   Structure: Standard AR-RNN from JLT 2021 paper.
 %   Input: [Rx_Window; Soft_Output(n-1...n-k)]
-%   Output: Residual correction to Linear FFE
+%   Output: Estimated Symbol Level y(n) (Normalized)
 
     %% 0) Defaults
-    if nargin < 4 || isempty(InputLength), InputLength = 101; end
-    if nargin < 5 || isempty(HiddenSize), HiddenSize = 32; end
+    if nargin < 4 || isempty(InputLength), InputLength = 21; end
+    if nargin < 5 || isempty(HiddenSize), HiddenSize = 32; end   % Increased from 12
     if nargin < 6 || isempty(LearningRate), LearningRate = 1e-3; end
     if nargin < 7 || isempty(MaxEpochs), MaxEpochs = 30; end
-    if nargin < 8 || isempty(k), k = 5; end % AR typically uses shorter history than WD
-    if nargin < 9 || isempty(DelayCandidates), DelayCandidates = -20:20; end
+    if nargin < 8 || isempty(k), k = 2; end 
+    if nargin < 9 || isempty(DelayCandidates), DelayCandidates = -10:10; end
     if nargin < 10 || isempty(OffsetCandidates), OffsetCandidates = [1 2]; end
 
     execEnv = 'auto';
@@ -22,130 +20,110 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_AR_Implement
 
     %% 1) Preprocess
     Rx = xRx(:); Tx = xTx(:);
+    
+    % Normalize Rx/Tx to be roughly [-1, 1] or unit variance for NN stability
     y_mean = mean(Tx); y_std  = std(Tx);
     Rx = (Rx - mean(Rx)) / std(Rx);
-    Tx_n = (Tx - y_mean) / y_std;
+    Tx_n = (Tx - y_mean) / y_std; 
 
-    %% 2) Linear Probe (FFE Baseline)
-    % Use short feedback history for linear probe to avoid instability
+    %% 2) Grid Search for Best Delay (Using Linear Probe as a quick estimator)
+    % Even for direct NN, we need to know the correct alignment (Delay/Offset)
     ScanSamples = min(4000, NumPreamble_TDE);
     best_mse = inf; best_delay = 0; best_offset = OffsetCandidates(1); 
-    w_lin = zeros(InputLength + k, 1); % Init with zeros to be safe
     
     for off = OffsetCandidates
         for d = DelayCandidates
-            % Use Teacher Forcing for probe
-            [X, Y] = build_data(Rx, Tx_n, InputLength, k, off, d, ScanSamples);
+            [X, Y] = build_data(Rx, Tx_n, InputLength, 0, off, d, ScanSamples, 0); 
             if size(X,2)<500, continue; end
             X=double(X.'); Y=double(Y.');
-            R = X'*X; w = (R + 1e-3*eye(size(R))) \ (X'*Y);
+            % Simple Linear Solution: w = (X'X)\X'Y
+            w = (X'*X + 1e-3*eye(size(X,2))) \ (X'*Y);
             mse = mean((X*w - Y).^2);
-            if mse < best_mse, best_mse=mse; best_delay=d; best_offset=off; w_lin=w; end
+            if mse < best_mse, best_mse=mse; best_delay=d; best_offset=off; end
         end
     end
 
-    %% 3) Train NN (Residuals using Teacher Forcing)
-    [X_all, Y_all, valid_tx_indices] = build_data(Rx, Tx_n, InputLength, k, best_offset, best_delay, NumPreamble_TDE);
-    X_tr = X_all.'; Y_tr = Y_all.';
-    
-    % Linear Pred & Residual
-    Y_lin = X_tr * w_lin;
-    Y_res = single(Y_tr - Y_lin);
+    %% 3) Train NN (Direct Prediction)
+    % Use Teacher Forcing: Feedback inputs are the TRUE Tx symbols (with optional noise)
+    NoiseStd = 0.1; % Increased noise for robustness
+    [X_all, Y_all, valid_tx_indices] = build_data(Rx, Tx_n, InputLength, k, best_offset, best_delay, NumPreamble_TDE, NoiseStd);
+    X_tr = X_all.'; 
+    Y_tr = Y_all.'; % Target is the FULL signal, not residual
     
     layers = [
         featureInputLayer(InputLength+k, 'Normalization','none')
         fullyConnectedLayer(HiddenSize, 'WeightsInitializer','he')
-        tanhLayer
-        fullyConnectedLayer(ceil(HiddenSize/2), 'WeightsInitializer','he')
-        tanhLayer
-        fullyConnectedLayer(1)
+        reluLayer % Changed to ReLU
+        fullyConnectedLayer(1) % Linear Output
         regressionLayer
     ];
     
-    opts = trainingOptions('adam', 'MaxEpochs', MaxEpochs, 'MiniBatchSize', 512, ...
-        'InitialLearnRate', LearningRate, 'L2Regularization', 1e-4, ...
+    opts = trainingOptions('adam', 'MaxEpochs', MaxEpochs, 'MiniBatchSize', 256, ...
+        'InitialLearnRate', LearningRate, 'L2Regularization', 1e-5, ... % Reduced L2
         'Shuffle','every-epoch', 'Verbose',0, 'Plots','none', 'ExecutionEnvironment', execEnv);
     
-    net = trainNetwork(X_tr, Y_res, layers, opts);
+    net = trainNetwork(X_tr, Y_tr, layers, opts);
 
-    %% 4) Inference (Soft Feedback Loop)
-    [Rx_Mat, ~, all_idx] = build_rx_only(Rx, Tx_n, InputLength, best_offset, best_delay);
+    % --- DEBUG INFO START ---
+    Y_pred_train = predict(net, X_tr, 'ExecutionEnvironment', execEnv);
+    if isa(Y_pred_train, 'gpuArray'), Y_pred_train = gather(Y_pred_train); end
     
-    % DEBUG PRINT
-    % disp(['RNN_AR Debug: Delay=', num2str(best_delay), ' Offset=', num2str(best_offset), ' Valid=', num2str(length(all_idx))]);
+    mse_train = mean((Y_tr - Y_pred_train).^2);
+    
+    % Hard Decision for Training BER
+    % Learn thresholds from Target Y_tr (Tx) distribution
+    [~, C_tr] = kmeans(double(Y_tr(1:min(5000,end))), 4, 'Replicates',3);
+    lvls_tr = sort(C_tr); thr_tr = (lvls_tr(1:3)+lvls_tr(2:4))/2;
+    
+    y_hard_tr = hard_dec_vec(Y_pred_train, lvls_tr, thr_tr);
+    tx_hard_tr = hard_dec_vec(Y_tr, lvls_tr, thr_tr);
+    
+    [~, ber_train] = biterr(y_hard_tr, tx_hard_tr, 2);
+    
+    disp('---------------------------------------------------------');
+    disp(['[RNN_AR Debug] Training MSE: ', num2str(mse_train, '%.5e')]);
+    disp(['[RNN_AR Debug] Training BER: ', num2str(ber_train, '%.5e')]);
+    disp('---------------------------------------------------------');
+    % --- DEBUG INFO END ---
+
+    %% 4) Inference (Free Running / Soft Feedback Loop)
+    [Rx_Mat, ~, all_idx] = build_rx_only(Rx, Tx_n, InputLength, best_offset, best_delay);
     
     N_tot = size(Rx_Mat, 2);
     ye_tot = zeros(N_tot, 1);
     
-    % Extract Weights
+    % Extract Weights for manual loop
     W1=gather(net.Layers(2).Weights); b1=gather(net.Layers(2).Bias);
     W2=gather(net.Layers(4).Weights); b2=gather(net.Layers(4).Bias);
-    W3=gather(net.Layers(6).Weights); b3=gather(net.Layers(6).Bias);
     
-    % Soft Feedback Buffer
-    % Init with mean value (0) or known preamble
+    % Feedback Buffer
     fb = zeros(k,1); 
-    if k>0 && ~isempty(Y_all), fb = double(Y_all(end-k+1:end)).'; end
     
     for n = 1:N_tot
         in_vec = [Rx_Mat(:,n); fb];
         
-        % Linear + Residual
-        try
-            y_lin = w_lin.' * double(in_vec);
-        catch ME
-            disp(['Error in Matrix Mul: w_lin size = ', mat2str(size(w_lin)), ...
-                  ', in_vec size = ', mat2str(size(in_vec))]);
-            rethrow(ME);
-        end
-        h1 = tanh(W1*in_vec + b1);
-        h2 = tanh(W2*h1 + b2);
-        y_res = W3*h2 + b3;
+        % Forward Pass (ReLU)
+        h1 = max(0, W1*in_vec + b1); % ReLU inference
+        y_out = W2*h1 + b2;
         
-        y_out = y_lin + y_res;
         ye_tot(n) = y_out;
         
-        % SOFT Feedback: Pass y_out directly back
-        % (Optionally saturate to avoid explosion)
+        % Soft Feedback Update
         if k > 0
-            y_soft = max(-3, min(3, y_out)); % Clip slightly to typical PAM4 range
+            % Clip slightly to avoid divergence, but keep it soft
+            y_soft = max(-3.5, min(3.5, y_out)); 
             fb = [y_soft; fb(1:end-1)];
         end
     end
 
-    ye = zeros(length(Tx),1); ye(all_idx) = ye_tot * y_std + y_mean;
-    
-    % --- SELF CHECK DEBUG ---
-    % Calculate BER internally to verify "0 error" claim
-    test_mask = all_idx > NumPreamble_TDE;
-    if any(test_mask)
-        y_test_raw = ye(all_idx(test_mask));
-        tx_test_raw = Tx(all_idx(test_mask));
-        
-        % Simple PAM4 Demod
-        [~, centers] = kmeans(double(y_test_raw(1:min(5000,end))), 4, 'Replicates',3);
-        lvls = sort(centers);
-        thr = (lvls(1:3)+lvls(2:4))/2;
-        y_hard = zeros(size(y_test_raw));
-        y_hard(y_test_raw < thr(1)) = 0;
-        y_hard(y_test_raw >= thr(1) & y_test_raw < thr(2)) = 1;
-        y_hard(y_test_raw >= thr(2) & y_test_raw < thr(3)) = 2;
-        y_hard(y_test_raw >= thr(3)) = 3;
-        
-        % Map Tx (assuming Tx is already 0,1,2,3 or needs mapping)
-        % Our Tx is amplitude (-3,-1,1,3). Need to map to 0,1,2,3 for biterr
-        % Simple way: sort unique values
-        uTx = unique(tx_test_raw);
-        if length(uTx) == 4
-             map_tx = zeros(size(tx_test_raw));
-             for i=1:4, map_tx(tx_test_raw == uTx(i)) = i-1; end
-             [~, ber_check] = biterr(y_hard, map_tx, 2);
-             % disp(['    [RNN_AR Internal Check] Test BER = ', num2str(ber_check)]);
-        end
-    end
+    % De-normalize
+    ye = zeros(length(Tx),1); 
+    ye(all_idx) = ye_tot * y_std + y_mean;
+    valid_tx_indices = all_idx;
 end
 
-function [X, Y, idx] = build_data(Rx, Tx, L, k, off, d, max_n)
+function [X, Y, idx] = build_data(Rx, Tx, L, k, off, d, max_n, noise_std)
+    if nargin < 8, noise_std = 0; end
     st = k+1; ed = length(Tx);
     if ~isempty(max_n), ed = min(ed, st+max_n-1); end
     n = (st:ed).';
@@ -161,11 +139,20 @@ function [X, Y, idx] = build_data(Rx, Tx, L, k, off, d, max_n)
     
     for i=1:N
         rx_p = Rx(st_i(i) : st_i(i)+L-1);
-        fb_p = Tx(n(i)-1 : -1 : n(i)-k); % True Tx (Teacher Forcing)
+        
+        if k > 0
+            fb_p = Tx(n(i)-1 : -1 : n(i)-k); % Teacher Forcing
+            if noise_std > 0
+                fb_p = fb_p + noise_std * randn(size(fb_p));
+            end
+        else
+            fb_p = [];
+        end
+        
         X(:,i) = [rx_p; fb_p];
     end
     idx = n;
-    Y = Y.'; % [1 x N]
+    Y = Y.';
 end
 
 function [RxMat, Tx, idx] = build_rx_only(Rx, Tx, L, off, d)
@@ -179,6 +166,14 @@ function [RxMat, Tx, idx] = build_rx_only(Rx, Tx, L, off, d)
     RxMat = zeros(L, N, 'single');
     for i=1:N, RxMat(:,i) = Rx(st_i(i):st_i(i)+L-1); end
     idx = n; Tx = [];
+end
+
+function yq = hard_dec_vec(y, L, T)
+    yq = zeros(size(y));
+    yq(y < T(1)) = 0;
+    yq(y >= T(1) & y < T(2)) = 1;
+    yq(y >= T(2) & y < T(3)) = 2;
+    yq(y >= T(3)) = 3;
 end
 
 function f = canUseGPU_local(), try, d=gpuDevice; f=d.Index>0; catch, f=false; end, end
