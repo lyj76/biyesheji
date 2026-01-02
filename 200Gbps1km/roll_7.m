@@ -5,6 +5,7 @@ close all;
 %% add paths
 addpath('fns');
 addpath(fullfile('fns','fns2'));
+addpath('algos');
 
 %% parameters
 Ft = 200e9;

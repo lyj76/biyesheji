@@ -101,7 +101,7 @@ function [BER, ye_aligned] = CLUT_VDFE_Implementation(Rx_in, Tx_in, NumPreamble,
             % 使用之前验证过的逻辑:
             idx_base = idx_c + L_FFE_Vol + (m-1);
             va = InputRx_Pad(idx_base : -1 : idx_base - (2*N2 - WL)); % 长度不对齐风险?
-            % 让我们用绝对索引更安全:
+            % 用绝对索引更安全:
             idx_s = idx_c + L_FFE_Vol + (m-1);
             idx_e = idx_c - L_FFE_Vol + (m-1);
             va = InputRx_Pad(idx_s : -1 : idx_e);

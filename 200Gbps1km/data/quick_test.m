@@ -5,7 +5,6 @@ close all;
 %% add paths
 addpath('fns');
 addpath(fullfile('fns','fns2'));
-addpath('algos');
 
 %% parameters
 NumSymbols = 2^18; 
