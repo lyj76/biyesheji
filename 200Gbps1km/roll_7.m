@@ -75,12 +75,12 @@ params.FNN_Epochs = 50;
 params.FNN_DelayCandidates = -30:30;
 params.FNN_OffsetCandidates = [1 2];
 
-params.RNN_InputLength = 61;
+params.RNN_InputLength = 101;
 params.RNN_HiddenSize = 64;
 params.RNN_LR = 0.001;
-params.RNN_Epochs = 15;
-params.RNN_k = 25;
-params.RNN_DelayCandidates = [8 10];
+params.RNN_Epochs = 50;
+params.RNN_k = 25; % Increased from 2 to 25 to match DFE length for 200G
+params.RNN_DelayCandidates = -30:30;
 params.RNN_OffsetCandidates = [1 2];
 
 %% algo list
@@ -91,8 +91,7 @@ algo_list = { ...
     'DP_VFFE_VDFE', ...
     'CLUT_VDFE', ...
     'FNN', ...
-    'RNN_WD', ...
-    'RNN_AR' ...
+    'RNN' ...
 };
 
 BERall = zeros(length(file_list), length(algo_list));
@@ -137,7 +136,7 @@ figure('Name', 'BER vs ROP');
 
 % Color Palette (High Contrast)
 % 1:FFE(Blue), 2:VNLE(Red), 3:LE_FFE_DFE(Yellow), 4:DP_VFFE(Purple)
-% 5:CLUT(Green), 6:FNN(Cyan), 7:RNN_WD(Black), 8:RNN_AR(Orange)
+% 5:CLUT(Green), 6:FNN(Cyan), 7:RNN(Black)
 colors = [
     0 0.4470 0.7410;  % Blue
     0.8500 0.3250 0.0980; % Red
@@ -145,10 +144,9 @@ colors = [
     0.4940 0.1840 0.5560; % Purple
     0.4660 0.6740 0.1880; % Green
     0.3010 0.7450 0.9330; % Cyan
-    0 0 0;                % Black (RNN_WD)
-    1 0.5 0               % Orange (RNN_AR) - Distinct from Blue
+    0 0 0                 % Black (RNN)
 ];
-markers = {'o-', 's-', 'd-', '^-', 'v-', '>-', 'p-', 'h-'};
+markers = {'o-', 's-', 'd-', '^-', 'v-', '>-', 'p-'};
 
 % Handle BER=0 for log plot
 BER_plot = BERall;
@@ -214,17 +212,11 @@ function [ye_use, idxTx, best_delay, best_offset] = run_equalizer(algo_id, xRx, 
                 xRx, xTx, NumPreamble_TDE, params.FNN_InputLength, params.FNN_HiddenSize, ...
                 params.FNN_LR, params.FNN_Epochs, params.FNN_DelayCandidates, params.FNN_OffsetCandidates);
             is_nn = true;
-        case 'RNN_WD'
-            % Windowed-Decision RNN (Hard Feedback) - High Performance
-            [ye, ~, valid_idx, best_delay, best_offset] = RNN_WD_Implementation( ...
-                xRx, xTx, NumPreamble_TDE, 101, 32, ...
-                params.RNN_LR, 30, 25, params.RNN_DelayCandidates, params.RNN_OffsetCandidates);
-            is_nn = true;
-        case 'RNN_AR'
-            % Auto-Regressive RNN (LSTM/Soft Feedback)
-            [ye, ~, valid_idx, best_delay, best_offset] = RNN_AR_Implementation( ...
-                xRx, xTx, NumPreamble_TDE, 61, 64, ...
-                params.RNN_LR, 20, 5, params.RNN_DelayCandidates, params.RNN_OffsetCandidates);
+        case 'RNN'
+            % Powerful Version RNN
+            [ye, ~, valid_idx, best_delay, best_offset] = RNN_Implementation( ...
+                xRx, xTx, NumPreamble_TDE, params.RNN_InputLength, params.RNN_HiddenSize, ...
+                params.RNN_LR, params.RNN_Epochs, params.RNN_k, params.RNN_DelayCandidates, params.RNN_OffsetCandidates);
             is_nn = true;
         otherwise
             error('Unknown algorithm: %s', algo_id);
