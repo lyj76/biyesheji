@@ -83,8 +83,8 @@ disp(['FNN BER:  ', num2str(stats_fnn.BER)]);
 disp('------------------------------------------------');
 disp('Running WD-RNN (Hard Feedback)...');
 tic;
-% LR=0.0001 (Slow), Epochs=50, Input=101, Hidden=64, k=2, Noise=0.2
-[ye_wd, ~, idx_wd, d_wd, off_wd] = RNN_WD_Implementation(xRx, xTx, NumPreamble_TDE, 101, 64, 0.0001, 50, 2, -20:20, [1 2], 0.2);
+% Residual Mode: Input=101, Hidden=64, k=2, Noise=0.05
+[ye_wd, ~, idx_wd, d_wd, off_wd] = RNN_WD_Implementation(xRx, xTx, NumPreamble_TDE, 101, 64, 0.001, 30, 2, -20:20, [1 2], 0.05);
 t_wd = toc;
 stats_wd = eval_equalizer_pam4(ye_wd(idx_wd), idx_wd, xsym, xm, NumPreamble_TDE, M);
 disp(['WD-RNN Time: ', num2str(t_wd), 's']);
