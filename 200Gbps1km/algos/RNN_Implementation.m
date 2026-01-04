@@ -5,7 +5,7 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
 %
 % 输入：xRx (2sps), xTx (1sps), NumPreamble_TDE 训练符号数
 % 输出：ye (与 xTx 等长；无效处为0), net, valid_tx_indices
-%
+% 
 % 
 % - 对齐：scan offset/delay (linear probe)
 % - 训练：teacher forcing (feedback 用真实 Tx_n)

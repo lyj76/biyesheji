@@ -57,11 +57,11 @@ end
 file_list = file_list(sort_idx);
 
 %% equalizer parameters
-params.N1 = 111;
-params.N2 = 21;
-params.WL = 1;
-params.D1 = 25;
-params.D2 = 3;
+params.N1 = 61;
+params.N2 = 7;
+params.WL = 3;
+params.D1 = 11;
+params.D2 = 0;
 params.WD = 1;
 params.K_Lin = 18;
 params.K_Vol = 90;
@@ -69,15 +69,15 @@ params.Lambda = 0.9999;
 params.scale = M/2;
 
 %% NN parameters
-params.FNN_InputLength = 111;
-params.FNN_HiddenSize = 32;
+params.FNN_InputLength = 61;
+params.FNN_HiddenSize = 7;
 params.FNN_LR = 0.001;
 params.FNN_Epochs = 50;
 params.FNN_DelayCandidates = -30:30;
 params.FNN_OffsetCandidates = [1 2];
 
-params.RNN_InputLength = 101;
-params.RNN_HiddenSize = 64;
+params.RNN_InputLength = 61;
+params.RNN_HiddenSize = 7;
 params.RNN_LR = 0.001;
 params.RNN_Epochs = 50;
 params.RNN_k = 25; % Increased from 2 to 25 to match DFE length for 200G
@@ -118,10 +118,16 @@ for n1 = 1:length(file_list)
     %% equalizer inputs
     xTx = xs;
     xRx = yt_filter;
-    NumPreamble_TDE = 10000;
 
     for a = 1:length(algo_list)
         algo_id = algo_list{a};
+
+        % Determine NumPreamble based on algorithm type
+        if ismember(upper(algo_id), {'FNN', 'RNN'})
+            NumPreamble_TDE = 40000;
+        else
+            NumPreamble_TDE = 10000;
+        end
 
         [ye_use, idxTx] = run_equalizer(algo_id, xRx, xTx, xsym, NumPreamble_TDE, M, params);
 

@@ -24,7 +24,8 @@ function [h, ye] = VNLE2_2pscenter(xTx_in, xRx_in, NumPreamble_TDE, N1, N2, Lamb
     L_FFE_Vol = (N2 - 1) / 2;
     
     % 维度计算
-    Dim_Vol = (2 * N2 - WL + 1) * WL / 2;
+    % 修正：循环中每次产生 N2 个非线性项，循环 WL 次，总数为 N2 * WL
+    Dim_Vol = N2 * WL;
     NumCoeffs = N1 + Dim_Vol;
     
     %% 2. RLS 训练阶段

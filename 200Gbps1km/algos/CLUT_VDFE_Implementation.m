@@ -26,7 +26,8 @@ function [BER, ye_aligned] = CLUT_VDFE_Implementation(Rx_in, Tx_in, NumPreamble,
     
     % 维度计算
     Dim_FFE_Lin = N1;
-    Dim_FFE_Vol = (2 * N2 - WL + 1) * WL / 2;
+    % 修正: Volterra FFE 维度应为 N2 * WL
+    Dim_FFE_Vol = N2 * WL;
     Dim_DFE_Lin = D1;
     Dim_DFE_Vol = 0;
     if D2 > 0
