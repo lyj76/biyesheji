@@ -1,22 +1,18 @@
-function [ye, net, valid_tx_indices, best_delay, best_phase] = FNN_FS2pscenter( ...
-    xRx_2sps, xTx_1sps, NumPreamble_TDE, TapLen, HiddenSize, LearningRate, MaxEpochs, DelayCandidates, PhaseCandidates, init_net)
+function [ye, net, valid_tx_indices, best_delay, best_offset] = FNN_FS2pscenter( ...
+    xRx_2sps, xTx_1sps, NumPreamble_TDE, TapLen, HiddenSize, LearningRate, MaxEpochs, DelayCandidates, OffsetCandidates, init_net)
 
-% FNN_FS2pscenter (Residual Version):
-%   Ensures performance >= Linear FFE by explicitly solving the linear part first.
-%   Structure: Output = Linear_Filter(Input) + MLP(Input)
+% FNN_FS2pscenter (Enhanced + Clean Debug):
+%   Structure: Input -> FC(128)-ReLU -> FC(64)-ReLU -> FC(32)-ReLU -> FC(1)
+%   Output: Concise debug info (Sync MSE, Train/Val BER).
 
     %% 0) Defaults
-    if nargin < 4 || isempty(TapLen), TapLen = 111; end
-    if nargin < 5 || isempty(HiddenSize), HiddenSize = 48; end % Smaller hidden size for residual
+    if nargin < 4 || isempty(TapLen), TapLen = 61; end
+    if nargin < 5 || isempty(HiddenSize), HiddenSize = 128; end % Stronger Default
     if nargin < 6 || isempty(LearningRate), LearningRate = 1e-3; end
-    if nargin < 7 || isempty(MaxEpochs), MaxEpochs = 40; end
-    if nargin < 8 || isempty(DelayCandidates), DelayCandidates = -60:60; end
-    if nargin < 9 || isempty(PhaseCandidates), PhaseCandidates = [0 1]; end
+    if nargin < 7 || isempty(MaxEpochs), MaxEpochs = 50; end
+    if nargin < 8 || isempty(DelayCandidates), DelayCandidates = -30:30; end
+    if nargin < 9 || isempty(OffsetCandidates), OffsetCandidates = [1 2]; end
     if nargin < 10, init_net = []; end
-
-    if mod(TapLen,2) == 0
-        error('TapLen must be odd (e.g., 111).');
-    end
 
     execEnv = 'auto';
     try
@@ -30,30 +26,32 @@ function [ye, net, valid_tx_indices, best_delay, best_phase] = FNN_FS2pscenter( 
     %% 1) Preprocess
     rx = xRx_2sps(:);
     tx = xTx_1sps(:);
-    rx_scale = mean(abs(rx)) + eps;
-    tx_scale = mean(abs(tx)) + eps;
-    rx_n = rx / rx_scale;
-    tx_n = tx / tx_scale;
-    Half = (TapLen - 1)/2;
+    
+    rx_mean = mean(rx); rx_std = std(rx);
+    tx_mean = mean(tx); tx_std = std(tx);
+    
+    rx_n = (rx - rx_mean) / (rx_std + eps);
+    tx_n = (tx - tx_mean) / (tx_std + eps);
+    
+    Half = floor((TapLen - 1)/2);
     Padding = Half;
     rx_pad = [zeros(Padding,1); rx_n; zeros(Padding,1)];
 
-    %% 2) Linear Probe (Find best delay & Linear Weights)
+    %% 2) Synchronization (Linear Probe)
     ProbeLen = min(NumPreamble_TDE, length(tx_n));
     best_mse = inf;
     best_delay = 0;
-    best_phase = PhaseCandidates(1);
-    w_lin = zeros(TapLen, 1);
+    best_offset = OffsetCandidates(1);
 
-    for ph = PhaseCandidates
+    for off = OffsetCandidates
         for d = DelayCandidates
-            [X_probe, Y_probe, ~] = build_fs_dataset(rx_pad, tx_n, TapLen, d, ph, ProbeLen, Padding);
+            [X_probe, Y_probe, ~] = build_fs_dataset(rx_pad, tx_n, TapLen, d, off, ProbeLen, Padding);
             if isempty(Y_probe), continue; end
 
-            Xp = double(X_probe.');   % [N x TapLen]
-            Yp = double(Y_probe(:));  % [N x 1]
+            Xp = double(X_probe.');
+            Yp = double(Y_probe(:));
 
-            % Ridge Regression (Linear FFE Solution)
+            % Fast Linear Solution
             R = (Xp.'*Xp + 1e-5*eye(size(Xp,2)));
             w = R \ (Xp.'*Yp);
             mse = mean((Xp*w - Yp).^2);
@@ -61,44 +59,39 @@ function [ye, net, valid_tx_indices, best_delay, best_phase] = FNN_FS2pscenter( 
             if mse < best_mse
                 best_mse = mse;
                 best_delay = d;
-                best_phase = ph;
-                w_lin = w;
+                best_offset = off;
             end
         end
     end
-
-    %% 3) Build Train/Val set (Residuals)
-    [X_all, Y_all, ~] = build_fs_dataset(rx_pad, tx_n, TapLen, best_delay, best_phase, NumPreamble_TDE, Padding);
-
-    X = X_all.';            % [N x TapLen]
-    Y_true = Y_all(:);      % [N x 1]
     
-    % Calculate Linear Prediction
-    Y_lin = double(X) * w_lin;
+    %% 3) Build Dataset
+    [X_all, Y_all, ~] = build_fs_dataset(rx_pad, tx_n, TapLen, best_delay, best_offset, NumPreamble_TDE, Padding);
+    X = X_all.'; Y = Y_all(:);
     
-    % *** RESIDUAL TARGET ***
-    Y_res = single(Y_true - Y_lin); 
-    
-    % Shuffle + split
+    % Shuffle
     Ntot = size(X,1);
     perm = randperm(Ntot);
-    X = X(perm,:);
-    Y_res = Y_res(perm,:);
+    X = X(perm,:); Y = Y(perm,:);
 
     Ntr = floor(0.9*Ntot);
-    Xtr = single(X(1:Ntr,:));
-    Ytr = Y_res(1:Ntr,:);
-    Xva = single(X(Ntr+1:end,:));
-    Yva = Y_res(Ntr+1:end,:);
+    Xtr = single(X(1:Ntr,:)); Ytr = Y(1:Ntr,:);
+    Xva = single(X(Ntr+1:end,:)); Yva = Y(Ntr+1:end,:);
+    
+    fprintf('  [FNN] Sync MSE: %.4f | Train: %d samples | Hidden: %d\n', best_mse, Ntr, HiddenSize);
 
-    %% 4) Train NN on Residuals
+    %% 4) Network Architecture (Wide Dual-Layer ReLU)
     if isempty(init_net)
         layers = [
             featureInputLayer(TapLen, 'Normalization','none', 'Name','in')
+            
+            % Layer 1: Wide
             fullyConnectedLayer(HiddenSize, 'Name','fc1', 'WeightsInitializer','he')
-            tanhLayer('Name','act1') % Tanh is better for residuals centered at 0
-            fullyConnectedLayer(ceil(HiddenSize/2), 'Name','fc2', 'WeightsInitializer','he')
-            tanhLayer('Name','act2')
+            reluLayer('Name','act1') 
+            
+            % Layer 2: Wide (Keep full width)
+            fullyConnectedLayer(HiddenSize, 'Name','fc2', 'WeightsInitializer','he')
+            reluLayer('Name','act2')
+            
             fullyConnectedLayer(1, 'Name','out')
             regressionLayer('Name','loss')
         ];
@@ -110,55 +103,78 @@ function [ye, net, valid_tx_indices, best_delay, best_phase] = FNN_FS2pscenter( 
         'MaxEpochs', MaxEpochs, ...
         'MiniBatchSize', 256, ...
         'InitialLearnRate', LearningRate, ...
-        'L2Regularization', 1e-3, ...
+        'LearnRateSchedule', 'piecewise', ...
+        'LearnRateDropPeriod', 20, ...
+        'LearnRateDropFactor', 0.5, ...
+        'L2Regularization', 1e-4, ...
         'ValidationData', {Xva, Yva}, ...
-        'ValidationPatience', 6, ...
+        'ValidationPatience', 5, ...
         'Shuffle','every-epoch', ...
-        'Verbose', 0, ...
+        'Verbose', 0, ...  % SILENT MODE
         'Plots','none', ...
         'ExecutionEnvironment', execEnv);
 
+    %% 5) Train
+    tic;
     net = trainNetwork(Xtr, Ytr, layers, opts);
+    train_time = toc;
 
-    %% 5) Inference (Linear + Residual)
-    [X_full, ~, valid_tx_indices] = build_fs_dataset(rx_pad, tx_n, TapLen, best_delay, best_phase, [], Padding);
-
-    Xte = X_full.'; 
+    %% 6) Inference & Concise Diagnostics
+    % Check Train BER
+    y_pred_tr = predict(net, Xtr, 'MiniBatchSize', 8192, 'ExecutionEnvironment', execEnv);
+    [ber_tr, ~] = quick_calc_ber(y_pred_tr, Ytr, tx_std, tx_mean);
     
-    % 1. Linear Part
-    y_lin_full = double(Xte) * w_lin;
+    % Check Val BER
+    y_pred_va = predict(net, Xva, 'MiniBatchSize', 8192, 'ExecutionEnvironment', execEnv);
+    [ber_va, ~] = quick_calc_ber(y_pred_va, Yva, tx_std, tx_mean);
     
-    % 2. Residual Part
-    y_res_full = predict(net, Xte, 'MiniBatchSize', 8192, 'ExecutionEnvironment', execEnv);
-    y_res_full = double(y_res_full(:));
+    fprintf('  [FNN] Done in %.1fs | Train BER: %.2e | Val BER: %.2e\n', train_time, ber_tr, ber_va);
+    
+    if ber_tr > 1e-3
+        fprintf('      -> WARNING: Possible Underfitting. Try larger HiddenSize or more Epochs.\n');
+    elseif ber_va > 10 * ber_tr
+        fprintf('      -> WARNING: Possible Overfitting. Check Regularization.\n');
+    end
 
-    % 3. Combine
-    yhat_n = y_lin_full + y_res_full;
-
-    % Rescale
-    ye = yhat_n * tx_scale;
+    % Apply to FULL sequence
+    [X_full, ~, valid_tx_indices] = build_fs_dataset(rx_pad, tx_n, TapLen, best_delay, best_offset, [], Padding);
+    Xte = X_full.';
+    y_pred_n = predict(net, Xte, 'MiniBatchSize', 8192, 'ExecutionEnvironment', execEnv);
+    y_pred_n = double(y_pred_n(:));
+    
+    ye = y_pred_n * tx_std + tx_mean;
     valid_tx_indices = valid_tx_indices(:);
+
 end
 
 %% ===== helper =====
-function [X, Y, tx_idx] = build_fs_dataset(rx_pad, tx_1sps, TapLen, delay_samp, phase, max_syms, Padding)
+function [ber, y_hard] = quick_calc_ber(y_norm, y_true_norm, scale, mean_val)
+    y = y_norm * scale + mean_val;
+    yt = y_true_norm * scale + mean_val;
+    levels = [-3, -1, 1, 3];
+    y_hard = zeros(size(y));
+    yt_hard = zeros(size(yt));
+    for i=1:length(y), [~, idx] = min(abs(y(i) - levels)); y_hard(i) = idx-1; end
+    for i=1:length(yt), [~, idx] = min(abs(yt(i) - levels)); yt_hard(i) = idx-1; end
+    [~, ber] = biterr(y_hard, yt_hard, 2);
+end
+
+function [X, Y, tx_idx] = build_fs_dataset(rx_pad, tx_1sps, TapLen, delay_samp, offset, max_syms, Padding)
     Nsym = length(tx_1sps);
     n = (1:Nsym).';
-    center = (2*n) + delay_samp + phase + Padding;
-    Half = (TapLen-1)/2;
+    center = (2*n) + delay_samp + (offset-1) + Padding; 
+    Half = floor((TapLen-1)/2);
     st = center - Half;
     ed = center + Half;
     valid = (st >= 1) & (ed <= length(rx_pad));
     n_valid = n(valid);
     st_valid = st(valid);
-
     if isempty(n_valid), X=[]; Y=[]; tx_idx=[]; return; end
     if ~isempty(max_syms)
         K = min(length(n_valid), max_syms);
         n_valid = n_valid(1:K);
         st_valid = st_valid(1:K);
     end
-
     K = length(n_valid);
     X = zeros(TapLen, K, 'single');
     for i = 1:K
