@@ -27,19 +27,16 @@ xm = xm(:);
 xs = xm;
 
 %% pulse shaping脉冲成型，上采样
-% %（29到40都是本质无效代码，是模仿发射端操作来获得x_shape脉冲成型后的向量大小的【因为不是单纯两倍关系】，
-% 为了后面的接收数据据的截断）
 rolloff = 0.1;
 N = 128;
 sqrt_ht = rcosdesign(rolloff, N/Osamp_factor, Osamp_factor, 'normal');
 sqrt_ht = sqrt_ht ./ max(sqrt_ht);
+
 %上采样，插入0
 x_upsamp = upsample(xs, Osamp_factor);
 %成型
 x_shape = conv(sqrt_ht, x_upsamp);
 x_shape = x_shape ./ sqrt(mean(abs(x_shape).^2));
-
-
 
 %% data list (different dB)
 file_list = { ...

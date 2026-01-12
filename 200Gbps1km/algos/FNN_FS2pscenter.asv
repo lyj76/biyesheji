@@ -1,13 +1,13 @@
 function [ye, net, valid_tx_indices, best_delay, best_offset] = FNN_FS2pscenter( ...
     xRx_2sps, xTx_1sps, NumPreamble_TDE, TapLen, HiddenSize, LearningRate, MaxEpochs, DelayCandidates, OffsetCandidates, init_net)
 %xRx_2sps是原始的接收信号，xTx_1sps是发送的答案；NumPreamble_TDE是训练头长度；
-%TapLens是抽头的长度；HiddenSize隐藏层大小；LearningRate学习率； MaxEpochs最大轮次下降训练；
+%TapLens是抽头的长度；HiddenSize隐藏层大小；LearningRate学习率
 %
 % FNN_FS2pscenter (Enhanced + Clean Debug):
 %   Structure: Input -> FC(128)-ReLU -> FC(64)-ReLU -> FC(32)-ReLU -> FC(1)
 %   Output: Concise debug info (Sync MSE, Train/Val BER).
 
-    %% 0) Defaults参数检查
+    %% 0) Defaults
     if nargin < 4 || isempty(TapLen), TapLen = 61; end
     if nargin < 5 || isempty(HiddenSize), HiddenSize = 128; end % Stronger Default
     if nargin < 6 || isempty(LearningRate), LearningRate = 1e-3; end
@@ -32,17 +32,14 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = FNN_FS2pscenter(
     rx_mean = mean(rx); rx_std = std(rx);
     tx_mean = mean(tx); tx_std = std(tx);
     
-    %标准化。均值为0，方差为1
     rx_n = (rx - rx_mean) / (rx_std + eps);
     tx_n = (tx - tx_mean) / (tx_std + eps);
-    %padding
+    
     Half = floor((TapLen - 1)/2);
     Padding = Half;
     rx_pad = [zeros(Padding,1); rx_n; zeros(Padding,1)];
 
-    %% 2) Synchronization (Linear Probe探测找到时延和对应的off作为正确输入
-    %得到d（第一个tx_n对应的第一个rx_n索引2*d）和off（奇数还是偶数）
-    %粗略定位，基于最小mse；没有截断数据，仅仅为了定位
+    %% 2) Synchronization (Linear Probe)
     ProbeLen = min(NumPreamble_TDE, length(tx_n));
     best_mse = inf;
     best_delay = 0;
@@ -57,7 +54,6 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = FNN_FS2pscenter(
             Yp = double(Y_probe(:));
 
             % Fast Linear Solution
-            %快速找出初始的w，加快训练速度。
             R = (Xp.'*Xp + 1e-5*eye(size(Xp,2)));
             w = R \ (Xp.'*Yp);
             mse = mean((Xp*w - Yp).^2);
@@ -79,9 +75,7 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = FNN_FS2pscenter(
     perm = randperm(Ntot);
     X = X(perm,:); Y = Y(perm,:);
 
-    %NTr训练集数量
     Ntr = floor(0.9*Ntot);
-    %训练集和测试集
     Xtr = single(X(1:Ntr,:)); Ytr = Y(1:Ntr,:);
     Xva = single(X(Ntr+1:end,:)); Yva = Y(Ntr+1:end,:);
     
@@ -150,7 +144,6 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = FNN_FS2pscenter(
     y_pred_n = predict(net, Xte, 'MiniBatchSize', 8192, 'ExecutionEnvironment', execEnv);
     y_pred_n = double(y_pred_n(:));
     
-    %正则化还原，然后输出
     ye = y_pred_n * tx_std + tx_mean;
     valid_tx_indices = valid_tx_indices(:);
 
