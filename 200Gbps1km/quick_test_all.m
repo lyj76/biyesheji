@@ -127,34 +127,50 @@ for n1 = 1:length(file_list)
     fprintf('\n');
 end
 
-%% Plotting Results (Grouped Bar Chart)
+%% Plotting Results (Line Plot like roll_7.m)
 figure('Name', 'BER Comparison (3dBm vs 5dBm)', 'NumberTitle', 'off');
-b = bar(BER_results);
 
-% Aesthetics
-set(gca, 'YScale', 'log'); % Log scale for BER
-grid on;
-ylabel('BER (log scale)');
-title('BER Performance Comparison');
+% ROP points
+rop_dBm = [3, 5]; 
 
-% X-axis Labels
-xticklabels({'3 dBm', '5 dBm'});
-xlabel('Received Optical Power (ROP)');
+% Colors (Consistent with roll_7)
+colors = [
+    0 0.4470 0.7410;  % Blue
+    0.8500 0.3250 0.0980; % Red
+    0.9290 0.6940 0.1250; % Yellow
+    0.4940 0.1840 0.5560; % Purple
+    0.4660 0.6740 0.1880; % Green
+    0.3010 0.7450 0.9330; % Cyan
+    0 0 0                 % Black (RNN)
+];
+markers = {'o-', 's-', 'd-', '^-', 'v-', '>-', 'p-'};
 
-% Legend
-legend(algo_list, 'Location', 'northeastoutside');
+h_plots = gobjects(length(algo_list), 1);
+hold on;
 
-% Add HD-FEC Threshold
-yline(3.8e-3, '--k', 'HD-FEC (3.8e-3)', 'LineWidth', 1.5);
-
-% Value Labels on top of bars (Optional, meaningful for few bars)
-for i = 1:numel(b)
-    xt = b(i).XEndPoints;
-    yt = b(i).YEndPoints;
-    text(xt, yt, string(round(yt, 2, 'significant')), 'HorizontalAlignment','center', 'VerticalAlignment','bottom', 'FontSize', 8);
+for a = 1:length(algo_list)
+    y_data = BER_results(:, a);
+    % Floor at 1e-7 and take log10
+    y_log = log10(max(y_data, 1e-7));
+    
+    h_plots(a) = plot(rop_dBm, y_log, markers{a}, ...
+        'Color', colors(a,:), 'LineWidth', 1.5, ...
+        'MarkerSize', 8, 'MarkerFaceColor', colors(a,:));
 end
 
-ylim([1e-5 1e-2]); % Adjust Y-limits for better view
+% Add HD-FEC Threshold (log10)
+yline(log10(3.8e-3), '--k', 'HD-FEC (3.8e-3)', 'LineWidth', 1.2, 'LabelHorizontalAlignment', 'left');
+
+grid on;
+% grid minor;
+set(gca, 'XTick', rop_dBm); % Only show 3 and 5 on X-axis
+xlabel('Received Optical Power (dBm)');
+ylabel('log10(BER)');
+title('BER Performance Comparison (Quick Test)');
+legend(h_plots, algo_list, 'Location', 'northeastoutside', 'Interpreter', 'none');
+ylim([-6.5 -1.5]); 
+
+hold off;
 
 %% ---------------- local functions ----------------
 function [ye_use, idxTx, best_delay, best_offset] = run_equalizer(algo_id, xRx, xTx, xsym, NumPreamble_TDE, M, params)

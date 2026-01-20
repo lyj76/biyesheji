@@ -1,0 +1,86 @@
+>> roll_7
+警告: 名称不存在或不是目录: C:\Users\27456\Desktop\毕业设计\test\200Gbps1km\fns\fns2 
+> 位置：path (第 109 行)
+位置: addpath (第 86 行)
+位置: roll_7 (第 7 行) 
+Processing File: data\rop-1dBm_1.mat
+TimingEstimate = 419219
+File data\rop-1dBm_1.mat, Algo FFE, BER = 0.018751
+File data\rop-1dBm_1.mat, Algo VNLE, BER = 0.018474
+File data\rop-1dBm_1.mat, Algo LE_FFE_DFE, BER = 0.013839
+File data\rop-1dBm_1.mat, Algo DP_VFFE_VDFE, BER = 0.013699
+File data\rop-1dBm_1.mat, Algo CLUT_VDFE, BER = 0.014297
+  [FNN] Sync MSE: 0.0468 | Train: 36000 samples | Hidden: 128
+  [FNN] Done in 53.2s | Train BER: 1.52e-02 | Val BER: 2.65e-02
+      -> WARNING: Possible Underfitting. Try larger HiddenSize or more Epochs.
+File data\rop-1dBm_1.mat, Algo FNN, BER = 0.019762
+    [AR-RNN] Selected Offset=1, Delay=-6, SER=0.028, Linear MSE=0.04674
+    [AR-RNN] Train BER: 1.64e-02 | Delay: -6 | Offset: 1
+File data\rop-1dBm_1.mat, Algo RNN, BER = 0.014069
+Processing File: data\rop0dBm_1.mat
+TimingEstimate = 759731
+File data\rop0dBm_1.mat, Algo FFE, BER = 0.0072042
+File data\rop0dBm_1.mat, Algo VNLE, BER = 0.0070119
+File data\rop0dBm_1.mat, Algo LE_FFE_DFE, BER = 0.004309
+File data\rop0dBm_1.mat, Algo DP_VFFE_VDFE, BER = 0.0040394
+File data\rop0dBm_1.mat, Algo CLUT_VDFE, BER = 0.0042039
+  [FNN] Sync MSE: 0.0330 | Train: 36000 samples | Hidden: 128
+  [FNN] Done in 218.6s | Train BER: 4.46e-03 | Val BER: 6.25e-03
+      -> WARNING: Possible Underfitting. Try larger HiddenSize or more Epochs.
+File data\rop0dBm_1.mat, Algo FNN, BER = 0.006712
+    [AR-RNN] Selected Offset=1, Delay=9, SER=0.0105, Linear MSE=0.03474
+    [AR-RNN] Train BER: 5.11e-03 | Delay: 9 | Offset: 1
+File data\rop0dBm_1.mat, Algo RNN, BER = 0.0050869
+Processing File: data\rop1dBm_1.mat
+TimingEstimate = 509151
+File data\rop1dBm_1.mat, Algo FFE, BER = 0.0025105
+File data\rop1dBm_1.mat, Algo VNLE, BER = 0.002332
+File data\rop1dBm_1.mat, Algo LE_FFE_DFE, BER = 0.0012731
+File data\rop1dBm_1.mat, Algo DP_VFFE_VDFE, BER = 0.0010768
+File data\rop1dBm_1.mat, Algo CLUT_VDFE, BER = 0.0011045
+  [FNN] Sync MSE: 0.0243 | Train: 36000 samples | Hidden: 128
+  [FNN] Done in 250.6s | Train BER: 1.36e-03 | Val BER: 2.25e-03
+      -> WARNING: Possible Underfitting. Try larger HiddenSize or more Epochs.
+File data\rop1dBm_1.mat, Algo FNN, BER = 0.0021045
+    [AR-RNN] Selected Offset=2, Delay=3, SER=0.0055, Linear MSE=0.02665
+    [AR-RNN] Train BER: 1.24e-03 | Delay: 3 | Offset: 2
+File data\rop1dBm_1.mat, Algo RNN, BER = 0.0015509
+Processing File: data\rop2dBm_1.mat
+TimingEstimate = 486737
+File data\rop2dBm_1.mat, Algo FFE, BER = 0.0011204
+File data\rop2dBm_1.mat, Algo VNLE, BER = 0.0010074
+File data\rop2dBm_1.mat, Algo LE_FFE_DFE, BER = 0.00056317
+File data\rop2dBm_1.mat, Algo DP_VFFE_VDFE, BER = 0.00044816
+File data\rop2dBm_1.mat, Algo CLUT_VDFE, BER = 0.00044221
+  [FNN] Sync MSE: 0.0196 | Train: 36000 samples | Hidden: 128
+  [FNN] Done in 350.5s | Train BER: 3.61e-04 | Val BER: 8.75e-04
+File data\rop2dBm_1.mat, Algo FNN, BER = 0.00082605
+    [AR-RNN] Selected Offset=1, Delay=-5, SER=0.0005, Linear MSE=0.01941
+    [AR-RNN] Train BER: 4.75e-04 | Delay: -5 | Offset: 1
+File data\rop2dBm_1.mat, Algo RNN, BER = 0.00059201
+Processing File: data\rop3dBm_1.mat
+TimingEstimate = 724963
+File data\rop3dBm_1.mat, Algo FFE, BER = 0.00039858
+File data\rop3dBm_1.mat, Algo VNLE, BER = 0.00029547
+File data\rop3dBm_1.mat, Algo LE_FFE_DFE, BER = 0.00016855
+File data\rop3dBm_1.mat, Algo DP_VFFE_VDFE, BER = 0.00011898
+File data\rop3dBm_1.mat, Algo CLUT_VDFE, BER = 0.00010906
+  [FNN] Sync MSE: 0.0159 | Train: 36000 samples | Hidden: 128
+  [FNN] Done in 127.6s | Train BER: 6.94e-05 | Val BER: 3.75e-04
+File data\rop3dBm_1.mat, Algo FNN, BER = 0.00024309
+    [AR-RNN] Selected Offset=1, Delay=13, SER=0, Linear MSE=0.01726
+    [AR-RNN] Train BER: 2.12e-04 | Delay: 13 | Offset: 1
+File data\rop3dBm_1.mat, Algo RNN, BER = 0.00022508
+Processing File: data\rop5dBm_1.mat
+TimingEstimate = 68801
+File data\rop5dBm_1.mat, Algo FFE, BER = 0.00016261
+File data\rop5dBm_1.mat, Algo VNLE, BER = 0.00010906
+File data\rop5dBm_1.mat, Algo LE_FFE_DFE, BER = 9.7167e-05
+File data\rop5dBm_1.mat, Algo DP_VFFE_VDFE, BER = 4.7592e-05
+File data\rop5dBm_1.mat, Algo CLUT_VDFE, BER = 4.3626e-05
+  [FNN] Sync MSE: 0.0122 | Train: 36000 samples | Hidden: 128
+  [FNN] Done in 281.0s | Train BER: 1.39e-05 | Val BER: 1.25e-04
+File data\rop5dBm_1.mat, Algo FNN, BER = 2.4759e-05
+    [AR-RNN] Selected Offset=1, Delay=9, SER=0, Linear MSE=0.01346
+    [AR-RNN] Train BER: 1.38e-04 | Delay: 9 | Offset: 1
+File data\rop5dBm_1.mat, Algo RNN, BER = 6.0773e-05

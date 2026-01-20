@@ -9,7 +9,7 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = FNN_FS2pscenter(
 
     %% 0) Defaults参数检查
     if nargin < 4 || isempty(TapLen), TapLen = 61; end
-    if nargin < 5 || isempty(HiddenSize), HiddenSize = 128; end % Stronger Default
+    if nargin < 5 || isempty(HiddenSize), HiddenSize = 32; end % Stronger Default
     if nargin < 6 || isempty(LearningRate), LearningRate = 1e-3; end
     if nargin < 7 || isempty(MaxEpochs), MaxEpochs = 50; end
     if nargin < 8 || isempty(DelayCandidates), DelayCandidates = -30:30; end

@@ -182,28 +182,37 @@ for a = 1:length(algo_list)
     y_data = BERall(:, a);
     y_data(y_data == 0) = min_val; 
     
-    % Plot straight line with markers (Capture handle for legend)
-    h_plots(a) = semilogy(noise_dB, y_data, markers{a}, ...
-        'Color', colors(a,:), 'LineWidth', 1.5, 'MarkerSize', 7, ...
-        'MarkerFaceColor', colors(a,:));
+    % Style 2: Plot log10(BER) manually
+    % Floor at 1e-7 to avoid -Inf for BER=0
+    y_log = log10(max(y_data, 1e-7)); 
+    
+    h_plots(a) = plot(noise_dB, y_log, markers{a}, ...
+        'Color', colors(a,:), 'LineWidth', 1.5, ...
+        'MarkerSize', mk_size, 'MarkerFaceColor', colors(a,:));
 end
 
-% Add baseline threshold line (e.g. HD-FEC limit 3.8e-3)
-yline(3.8e-3, '--k', 'HD-FEC (3.8e-3)', 'LabelHorizontalAlignment', 'left');
+% === 添加 HD-FEC 阈值线 (converted to log10) ===
+fec_log = log10(3.8e-3); % approx -2.42
+yline(fec_log, '--k', 'HD-FEC (3.8e-3)', ...
+    'LineWidth', 1.2, 'LabelHorizontalAlignment', 'left', 'FontSize', 10);
 
 grid on;
-xlabel('Received Optical Power (dBm)');
-ylabel('BER (log scale)');
-title('BER Performance vs ROP');
-legend(h_plots, algo_list, 'Location', 'northeast', 'FontSize', 10);
+% No 'grid minor' needed for linear plot usually, but can keep if desired
+% yticks(-6:1:-1); % Optional: force integer ticks
 
-% Smart Y-limit
-max_ber = max(BERall(:));
-if max_ber == 0, max_ber = 1e-2; end
-ylim([min_val max_ber * 1.1]); % Tight adaptive limit (10% margin)
+% Smart Y-limit for Log10 Scale
+% Range usually from -6 (1e-6) to -1 (1e-1)
+ylim([-6.5, -1.5]); 
 
-% Add annotation for 0 BER
-text(max(noise_dB)-1, min_val*1.2, 'Floor: BER=0', 'FontSize', 8, 'Color', 'k');
+xlabel('Received Optical Power (dBm)', 'FontSize', 12, 'FontName', 'Arial');
+ylabel('log10(BER)', 'FontSize', 12, 'FontName', 'Arial'); 
+title('BER Performance vs ROP', 'FontSize', 14, 'FontName', 'Arial');
+
+% 图例放右上角
+legend(h_plots, algo_list, 'Location', 'southwest', 'FontSize', 10, 'Interpreter', 'none');
+
+box on;
+hold off;
 
 %% ---------------- local functions ----------------
 function [ye_use, idxTx, best_delay, best_offset] = run_equalizer(algo_id, xRx, xTx, xsym, NumPreamble_TDE, M, params)
