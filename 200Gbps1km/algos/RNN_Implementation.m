@@ -3,7 +3,11 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
     DelayCandidates, OffsetCandidates, ScanTrainSamples, ScanValSamples, ForceDelay, ForceOffset)
 % RNN_Implementation (AR-RNN style MLP with hard-decision feedback)
 %
-% 输入：xRx (2sps), xTx (1sps), NumPreamble_TDE 训练符号数
+% 输入：xRx (2sps)原始接收的信号, xTx (1sps)发送的信号, NumPreamble_TDE 训练符号数
+%InputLength输入窗口长度，HiddenSize隐藏层神经元数目，k记忆长度抽头
+%learningrate学习率，MaxEpochs最大轮次，ScanTrainSamples` &
+%`ScanValSamples`给快速探测到delay时延和offset相位使用的
+%还有一点参数是同步范围。
 % 输出：ye (与 xTx 等长；无效处为0), net, valid_tx_indices
 % 
 % 
@@ -12,7 +16,7 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
 % - 推理：free-running + 手写前向传播 + 硬判决反馈
 % - 硬判决电平：从训练标签 Yall 用 kmeans 自动估计，避免尺度错导致 BER=0.5
 
-    %% ===== defaults =====
+    %% ===== defaults =====参数默认
     if nargin < 4 || isempty(InputLength), InputLength = 101; end
     if nargin < 5 || isempty(HiddenSize), HiddenSize = 64; end
     if nargin < 6 || isempty(LearningRate), LearningRate = 1e-3; end
@@ -41,7 +45,7 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
         % disp('    [AR-RNN] GPU not available. Using CPU.');
     end
 
-    %% ===== preprocess & normalize =====
+    %% ===== preprocess & normalize 正则化
     Rx = xRx(:);
     Tx = xTx(:);
 
@@ -60,11 +64,17 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
     best_offset = OffsetCandidates(1);
 
     % --- fixed PAM4 levels from Tx_n (robust for scan) ---
+    %Yref参考向量
     Yref = double(Tx_n(1:min(NumPreamble_TDE, length(Tx_n))));
+    %-3，-1，1，3归一化的值得到序列为levels_ref：[-1.5, -0.5, 0.5, 1.5]
     [~, Cref] = kmeans(Yref(:), 4, 'Replicates', 3);
     levels_ref = sort(Cref(:)).';
+    %阈值就是中间的点序列为thr_ref
     thr_ref = (levels_ref(1:3) + levels_ref(2:4))/2;
 
+
+    %double循环，遍历offset和delay得到最佳值，完成对齐。
+    %offset选择1或者2，表示选2pcs的奇数还是偶数作为窗的中心，delay是时间延迟
     for oi = 1:numel(OffsetCandidates)
         offset = OffsetCandidates(oi);
         for di = 1:numel(DelayCandidates)
@@ -100,10 +110,12 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
             mse = mean((Yp - Yva).^2);
 
             % --- decision-domain metric: SER using fixed PAM4 thresholds ---
+            %计算这个offset和delay下的ber
             Yp_q = hard_slice_pam4(Yp, levels_ref, thr_ref);
             Yv_q = hard_slice_pam4(Yva, levels_ref, thr_ref);
             ser = mean(Yp_q ~= Yv_q);
 
+            %更新offset和ber
             if ser < best_ser
                 best_ser = ser;
                 best_mse = mse;
@@ -127,6 +139,10 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
     end
 
     %% ===== 2) build full aligned dataset =====
+    %build_center_window_dataset重要的内置函数，利用上面计算出来的delay和offset构建训练集
+    %返回Xall(Rx利用offset【相位】，delay时延，得到窗的中心，还有InputLength窗的大小切割出的输入向量组)，同时不填充左边界窗直接舍去。
+    %Yall：Tx_n向量剪切掉，舍去的元素，对应的发送符号[-3,-1,1,3]
+    %valid_tx_indices，边界问题，定义为Xall第一个窗对应了Tx_n第几个符号。用于ber
     [Xall, Yall, valid_tx_indices] = build_center_window_dataset(Rx, Tx_n, InputLength, best_offset, best_delay, []);
     Nvalid = size(Xall,2);
     if Nvalid < (k+10)
@@ -135,7 +151,16 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
 
     Ntrain = min(NumPreamble_TDE, Nvalid);
 
-    %% ===== 3) training set (teacher forcing) =====
+
+
+
+
+    %% ===== 3) training set 自回归训练集(teacher forcing) =====
+    %因为rnn，需要构建rnn输入向量，向量结构为：【窗，前k个原发送符号】。其中k是rnn记忆长度
+    %最后得到X_train,Y_train
+    %X_train结构行向量组，每一个行向量格式【接收窗，前k个原发送符号】
+    %Y_train结构，Yall截掉前k个符号得到的接收向量组
+    %因为记忆，不填充直接舍去前面边界的窗
     start_n = k + 1;
     end_n   = Ntrain;
 
@@ -149,9 +174,14 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
         Yar(1,idx) = Yall(1,n);
         idx = idx + 1;
     end
-
+    
     X_Train = Xar.';   % [Ns x F]
     Y_Train = Yar.';   % [Ns x 1]
+
+
+
+
+
 
     %% ===== 4) network (MLP) =====
     % disp('    [AR-RNN] Configuring AR-MLP Network (Eq.(2) style)...');
@@ -188,7 +218,11 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
     net = trainNetwork(X_Train, Y_Train, layers, options);
     % disp(['    [AR-RNN] Training Finished in ', num2str(toc,'%.3f'), ' s']);
 
-    %% ===== 6) inference: free-running, manual forward + HARD decision feedback =====
+
+
+
+
+    %% ===== 6) inference: free-running, manual forward + 硬判决回归（不能复用前面的网络因为这个rnn结构要自己构建每个时刻的输入实现输出） =====
     % disp('    [AR-RNN] Inference on Full Sequence (free-running, manual forward + hard feedback)...');
 
     % ---- extract weights by name (robust) ----
@@ -254,6 +288,14 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = RNN_Implementati
     ye(valid_tx_indices) = ye_val;
 
 end
+
+
+
+
+
+
+
+%%其他辅助函数
 
 %% ================= helper: build centered window dataset (2sps) =================
 function [X, Y, tx_idx_out] = build_center_window_dataset(Rx_Data, Tx_Data, InputLength, offset, delay, max_samples)

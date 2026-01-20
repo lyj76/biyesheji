@@ -77,14 +77,14 @@ params.scale = M/2;
 
 %% NN parameters
 params.FNN_InputLength = 61;
-params.FNN_HiddenSize = 41;
+params.FNN_HiddenSize = 128;
 params.FNN_LR = 0.001;
-params.FNN_Epochs = 50;
+params.FNN_Epochs = 100;
 params.FNN_DelayCandidates = -30:30;
 params.FNN_OffsetCandidates = [1 2];
 
 params.RNN_InputLength = 61;
-params.RNN_HiddenSize = 7;
+params.RNN_HiddenSize = 16;
 params.RNN_LR = 0.001;
 params.RNN_Epochs = 50;
 params.RNN_k = 25; % Increased from 2 to 25 to match DFE length for 200G rnn记忆长度
@@ -266,7 +266,7 @@ function [ye_use, idxTx, best_delay, best_offset] = run_equalizer(algo_id, xRx, 
 
         %均衡延时函数
         %off是奇数还是偶数是答案
-        %d0是ye对应的发送的第一个序号是什么
+        %d0是ye（接收符号序列）对应的发送的第一个序号是什么
         [off, d0] = align_offset_delay_by_ser(ye, xsym, NumPreamble_TDE, M, -60:60);
 
 
