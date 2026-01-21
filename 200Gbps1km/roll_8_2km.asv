@@ -78,7 +78,7 @@ params.FNN_DelayCandidates = -20:20;
 params.FNN_OffsetCandidates = [1 2];
 
 params.RNN_InputLength = 61;
-params.RNN_HiddenSize = 22;   % Paper: 20
+params.RNN_HiddenSize = 20;   % Paper: 20
 params.RNN_LR = 0.001;
 params.RNN_Epochs = 50;       % Optimized: 50
 params.RNN_k = 25; 
@@ -163,8 +163,9 @@ for n1 = 1:length(file_list)
     end
 end
 
-%% Plot: BER vs ROP (dBm) - Modified for Semilog Y-Axis
+%% Plot: BER vs ROP (dBm)
 figure('Name', 'BER vs ROP (2km)');
+
 % Color Palette & Markers
 colors = [
     0 0.4470 0.7410;      % 1:FFE (Blue)
@@ -178,37 +179,31 @@ colors = [
 ];
 markers = {'o-', 's-', 'd-', '^-', 'v-', '>-', 'p-', 'h-'};
 mk_size = 8;
+
 h_plots = gobjects(length(algo_list), 1);
-min_ber_floor = 1e-7; % 防止 BER=0 时无法画图
+min_val = 1e-6; 
 
 hold on;
 for a = 1:length(algo_list)
     y_data = BERall(:, a);
-    % 处理 BER=0 的情况，防止 semilogy 报错或线条断裂
-    y_data(y_data < min_ber_floor) = min_ber_floor; 
+    y_data(y_data == 0) = min_val; 
+    y_log = log10(max(y_data, 1e-7)); 
     
-    % --- 关键修改：使用 semilogy，并且直接传入原始 BER (不要 log10) ---
-    h_plots(a) = semilogy(rop_dBm, y_data, markers{a}, ...
+    h_plots(a) = plot(rop_dBm, y_log, markers{a}, ...
         'Color', colors(a,:), 'LineWidth', 1.5, ...
         'MarkerSize', mk_size, 'MarkerFaceColor', colors(a,:));
 end
 
-% Limits Lines (FEC 门限)
-% --- 关键修改：yline 使用原始数值，不要 log10 ---
-yline(3.8e-3, '--k', 'HD-FEC (3.8e-3)', 'LineWidth', 1.2, 'FontSize', 10, 'LabelHorizontalAlignment', 'left');
-yline(2.4e-2, ':k', 'SD-FEC (2.4e-2)', 'LineWidth', 1.2, 'FontSize', 10, 'LabelHorizontalAlignment', 'left');
+% Limits Lines
+yline(log10(3.8e-3), '--k', 'HD-FEC (3.8e-3)', 'LineWidth', 1.2, 'FontSize', 10);
+yline(log10(2.4e-2), ':k', 'SD-FEC (2.4e-2)', 'LineWidth', 1.2, 'FontSize', 10);
 
 grid on;
-grid minor; % 开启次网格，对数坐标下非常重要
 xlabel('Received Optical Power (dBm)', 'FontSize', 12, 'FontName', 'Arial');
-ylabel('BER (Log Scale)', 'FontSize', 12, 'FontName', 'Arial'); 
+ylabel('log10(BER)', 'FontSize', 12, 'FontName', 'Arial'); 
 title('BER Performance vs ROP (200Gbps 2km)', 'FontSize', 14, 'FontName', 'Arial');
 legend(h_plots, algo_list, 'Location', 'southwest', 'FontSize', 10, 'Interpreter', 'none');
-
-% 设置 Y 轴范围 (直接使用 10 的幂次)
-ylim([1e-5, 1]); 
-% 设置 Y 轴刻度显示模式，确保看起来是 10^-x
-set(gca, 'YScale', 'log'); 
+ylim([-5, -0.5]); % Adjust based on data range
 
 box on;
 hold off;

@@ -1,159 +1,111 @@
 function [ye, net, valid_tx_indices, best_delay, best_offset] = WDRNN_Implementation( ...
     xRx, xTx, NumPreamble_TDE, InputLength, HiddenSize, LearningRate, MaxEpochs, k, ...
     DelayCandidates, OffsetCandidates)
-% WDRNN_Implementation - 加权判决反馈 RNN (Weighted Decision RNN) 论文复现版
-% 结构：单隐层 (Single Hidden Layer) + 加权反馈回路 (Weighted Feedback Loop)
-% 
-% 输入参数：
-%   xRx                 : 接收信号 (2倍过采样)
-%   xTx                 : 发送信号 (1倍符号率)
-%   NumPreamble_TDE     : 用于训练的符号数量 (前导码长度)
-%   InputLength         : 输入滑窗长度 (默认 61)
-%   HiddenSize          : 隐层神经元数量 (论文最优: 20)
-%   LearningRate        : 学习率 (默认 1e-3)
-%   MaxEpochs           : 训练轮数 (默认 50)
-%   k                   : 反馈记忆长度 (默认 25)
-%   DelayCandidates     : 同步搜索的延时范围 (默认 -20:20)
-%   OffsetCandidates    : 同步搜索的相位偏移 [1 2]
-%
-% 输出参数：
-%   ye                  : 均衡后的输出信号
-%   net                 : 训练好的网络对象
-%   valid_tx_indices    : 有效数据的索引
-%   best_delay          : 最佳延时
-%   best_offset         : 最佳相位
+% WDRNN_Implementation - Physics-Informed Volterra WD-RNN
+% 核心改动：
+% 1. 回归单层结构 (Hidden=32)：保证 2.7万 数据量下的收敛性
+% 2. 物理特征注入：输入不仅包含 x，还包含 x.^2 (模拟光强检测非线性)
+% 3. WD 参数微调：回归论文推荐的 beta=0.14 (对 5.6dBm 更有效)
 
-    %% ===== 0. 默认参数设置 =====
+    %% ===== 0. 参数设置 =====
     if nargin < 4 || isempty(InputLength), InputLength = 61; end
-    if nargin < 5 || isempty(HiddenSize), HiddenSize = 20; end
+    if nargin < 5 || isempty(HiddenSize), HiddenSize = 32; end % 单层给32个神经元够了
     if nargin < 6 || isempty(LearningRate), LearningRate = 1e-3; end
-    if nargin < 7 || isempty(MaxEpochs), MaxEpochs = 50; end
+    if nargin < 7 || isempty(MaxEpochs), MaxEpochs = 60; end % 单层收敛快，60轮足够
     if nargin < 8 || isempty(k), k = 25; end
     if nargin < 9 || isempty(DelayCandidates), DelayCandidates = -20:20; end
     if nargin < 10 || isempty(OffsetCandidates), OffsetCandidates = [1 2]; end
     
-    % 快速扫描参数：用于同步搜索的样本数
     ScanTrainSamples = min(5000, NumPreamble_TDE);
     ScanValSamples = min(2000, max(0, NumPreamble_TDE - ScanTrainSamples));
 
-    if mod(InputLength,2)==0
-        warning('[WDRNN] 输入窗口长度为偶数，建议使用奇数以保证中心对齐。');
-    end
+    % WD 参数 (回归论文原值，高SNR下更准)
+    alpha = 5;      
+    beta = 0.14;    
 
-    %% ===== WD 参数 (论文推荐值) =====
-    % 用于计算加权系数 S(gamma)
-    alpha = 5;      % 陡度参数
-    beta = 0.14;    % 阈值参数
-
-    %% ===== 1. 预处理与归一化 =====
-    Rx = xRx(:);
-    Tx = xTx(:);
-
-    y_mean = mean(Tx);
-    y_std  = std(Tx);
-
-    % 归一化到 ~N(0,1) 分布，这对于神经网络训练稳定性至关重要
-    % 这一步使得网络不需要学习信号的绝对幅度，只关注波形特征
+    %% ===== 1. 预处理 =====
+    Rx = xRx(:); Tx = xTx(:);
+    y_mean = mean(Tx); y_std = std(Tx);
+    
+    % 归一化 Rx (Tx 保持原样或去均值，为了 K-means 准确)
     Rx = (Rx - mean(Rx)) / std(Rx);
     Tx_n = (Tx - y_mean) / y_std;
 
-
-
-    %% ===== 2. 同步：扫描最佳 Delay 和 Offset (线性探测法) =====
-    % 使用简单的线性回归 (Ridge Regression) 快速找到最佳对齐位置
-    best_ser = inf;
-    best_mse = inf;
-    best_delay = DelayCandidates(1);
-    best_offset = OffsetCandidates(1);
-
-    % 从归一化的发送信号中学习 PAM4 电平，用于计算 SER
+    %% ===== 2. 同步 (Linear Probe) =====
+    best_ser = inf; best_delay = DelayCandidates(1); best_offset = OffsetCandidates(1);
+    
+    % 学习电平
     Yref = double(Tx_n(1:min(NumPreamble_TDE, length(Tx_n))));
     [~, Cref] = kmeans(Yref(:), 4, 'Replicates', 3);
     levels_ref = sort(Cref(:)).';
     thr_ref = (levels_ref(1:3) + levels_ref(2:4))/2;
-
-    % 双重循环扫描
+    
     for oi = 1:numel(OffsetCandidates)
         offset = OffsetCandidates(oi);
         for di = 1:numel(DelayCandidates)
             delay = DelayCandidates(di);
-            
-            % 构建临时数据集用于测试
-            [Xscan, Yscan] = build_center_window_dataset(Rx, Tx_n, InputLength, offset, delay, ScanTrainSamples + ScanValSamples);
-            if size(Xscan,2) < (ScanTrainSamples + 10), continue; end
-
-            Xs = Xscan.';
-            Ys = Yscan.';
-            
-            Xtr = Xs(1:ScanTrainSamples,:);
-            Ytr = Ys(1:ScanTrainSamples,:);
-            
+            [Xscan, Yscan] = build_center_window_dataset(Rx, Tx_n, InputLength, offset, delay, ScanTrainSamples+ScanValSamples);
+            if size(Xscan,2) < (ScanTrainSamples+10), continue; end
+            Xs=Xscan.'; Ys=Yscan.';
+            Xtr=Xs(1:ScanTrainSamples,:); Ytr=Ys(1:ScanTrainSamples,:);
             if size(Xtr,1) <= size(Xtr,2), continue; end
-
-            % 线性回归求解权重
-            w = Xtr \ Ytr; 
-            Yp = Xtr * w;
-            
-            % 计算误符号率 (SER)
+            w = Xtr \ Ytr; Yp = Xtr * w;
             Yp_q = hard_slice_pam4(Yp, levels_ref, thr_ref);
             Yv_q = hard_slice_pam4(Ytr, levels_ref, thr_ref);
             ser = mean(Yp_q ~= Yv_q);
-
-            % 更新最佳同步参数
-            if ser < best_ser
-                best_ser = ser;
-                best_mse = mean((Yp - Ytr).^2);
-                best_delay = delay;
-                best_offset = offset;
-            end
+            if ser < best_ser, best_ser=ser; best_delay=delay; best_offset=offset; end
         end
     end
     
-    % disp(['    [WDRNN] Sync: Delay=', num2str(best_delay), ', Offset=', num2str(best_offset), ', SER=', num2str(best_ser)]);
-
-    %% ===== 3. 构建完整的对齐数据集 =====
-    % 根据找到的最佳 offset 和 delay，重新构建所有数据的输入矩阵 X 和目标向量 Y
+    %% ===== 3. 构建数据集 =====
     [Xall, Yall, valid_tx_indices] = build_center_window_dataset(Rx, Tx_n, InputLength, best_offset, best_delay, []);
     Nvalid = size(Xall,2);
     Ntrain = min(NumPreamble_TDE, Nvalid);
 
-    %% ===== 4. 训练集构建 (Teacher Forcing) =====
-    % 在训练阶段，我们使用"真实"的过去符号作为反馈输入
+    %% ===== 4. 特征工程 (关键改动：Physics Injection) =====
+    % 构造增强特征：[原始输入, 原始输入的平方]
+    % 这让单层网络瞬间拥有了拟合 Volterra 非线性的能力
     start_n = k + 1;
     end_n   = Ntrain;
-
-    Xar = zeros(InputLength + k, end_n - start_n + 1, 'single');
+    
+    % 输入维度翻倍：(InputLength + k) * 2
+    feat_dim = (InputLength + k) * 2;
+    
+    Xar = zeros(feat_dim, end_n - start_n + 1, 'single');
     Yar = zeros(1, end_n - start_n + 1, 'single');
-
+    
     idx = 1;
     for n = start_n:end_n
-        % 取前 k 个真实的发送符号作为反馈
-        fb = Yall(1, n-1 : -1 : n-k);       
-        % 拼接：[接收信号窗口; 反馈符号]
-        Xar(:,idx) = [Xall(:,n); fb.'];     
+        fb = Yall(1, n-1 : -1 : n-k);
+        
+        % 原始特征 vector
+        raw_feat = [Xall(:,n); fb.'];
+        
+        % 物理特征 vector (平方项，模拟光电检测)
+        % 注意：只对 Rx 部分做平方更有物理意义，但为了简单，全做也无妨
+        poly_feat = raw_feat .^ 2; 
+        
+        % 拼接
+        Xar(:,idx) = [raw_feat; poly_feat];
         Yar(1,idx) = Yall(1,n);
         idx = idx + 1;
     end
-    
-    X_Train = Xar.';   
-    Y_Train = Yar.';   
+    X_Train = Xar.'; Y_Train = Yar.';
 
-    %% ===== 5. 网络构建 (单隐层 MLP) =====
-    % 论文结构：Input -> FullyConnected(20) -> Tanh -> FullyConnected(1) -> Output
+    %% ===== 5. 网络构建 (回归单层，但输入更强) =====
     layers = [
-        featureInputLayer(InputLength + k, 'Normalization','none', 'Name','input')
+        featureInputLayer(feat_dim, 'Normalization','none', 'Name','input')
         
+        % 单隐层 (宽一点，由20加到32)
+        fullyConnectedLayer(HiddenSize, 'WeightsInitializer', 'he', 'Name', 'fc1')
+        tanhLayer('Name', 'tanh1')
         
-        fullyConnectedLayer(HiddenSize, 'Name','fc1', 'WeightsInitializer', 'he')
-        tanhLayer('Name','tanh1')
-        
-     
-        
-      
-        fullyConnectedLayer(1, 'Name','out', 'WeightsInitializer', 'he')
+        % 输出
+        fullyConnectedLayer(1, 'WeightsInitializer', 'he', 'Name', 'out')
         regressionLayer('Name','loss')
     ];
-
+    
+    % 学习率策略
     options = trainingOptions('adam', ...
         'MaxEpochs', MaxEpochs, ...
         'MiniBatchSize', 256, ...
@@ -163,137 +115,89 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = WDRNN_Implementa
         'Verbose', 0, ...
         'ExecutionEnvironment', 'auto');
 
-    %% ===== 6. 模型训练 =====
+    %% ===== 6. 训练 =====
     net = trainNetwork(X_Train, Y_Train, layers, options);
 
-    %% ===== 7. 推理 (Inference) 与 加权反馈 (WD) =====
-    
-    
-    % 提取网络权重
+    %% ===== 7. 推理 (适配物理特征) =====
     L = net.Layers;
     l_fc1 = L(strcmp({L.Name}, 'fc1'));
+    if isempty(l_fc1), l_fc1 = L(2); else, l_fc1 = l_fc1(1); end
     l_out = L(strcmp({L.Name}, 'out'));
+    if isempty(l_out), l_out = L(end-1); else, l_out = l_out(1); end
 
     W1 = gather(l_fc1.Weights); b1 = gather(l_fc1.Bias);
     W2 = gather(l_out.Weights); b2 = gather(l_out.Bias);
 
-    % 从训练数据中学习 PAM4 电平，用于 WD 计算
-    % 注意：因为网络是在归一化域工作的，所以这里的电平也是归一化的
+    % 学习电平
     Ytr_vals = double(Yall(1, 1:Ntrain)).';
     [~, C] = kmeans(Ytr_vals, 4, 'Replicates', 3);
     pam4_levels = sort(C(:)).'; 
     thr = (pam4_levels(1:3) + pam4_levels(2:4))/2;
+    dist_levels = mean(diff(pam4_levels));
     
-    % 准备缓冲区
+    ye_n = zeros(Nvalid, 1);
+    ye_fb = zeros(Nvalid, 1);
+    ye_n(1:k) = Yall(1,1:k).';
+    ye_fb(1:k) = Yall(1,1:k).';
+    
     tanhf = @(z) tanh(z);
-    ye_n  = zeros(Nvalid,1);   
-    ye_fb = zeros(Nvalid,1); % 存储反馈值 (即加权后的判决值)
 
-    % 初始化前导部分 
-    ye_n(1:k)  = Yall(1,1:k).';
-    ye_fb(1:k) = Yall(1,1:k).'; 
-
-    
     for n = (k+1):Nvalid
-        % 1. 构造反馈向量 (取过去 k 个加权反馈值)
-        fb = ye_fb(n-1:-1:n-k); 
+        % 1. 构造反馈
+        fb = ye_fb(n-1:-1:n-k);
         
-        % 2. 构造输入向量 u = [接收窗; 反馈]
-        u  = [Xall(:,n); single(fb)];
-        u  = double(u);
-
-        % 3. 前向传播 (Forward Pass)
-        h1 = tanhf(W1*u + b1);   % 隐层 Tanh 激活
-        y_soft = W2*h1 + b2;     % 输出层 线性激活
+        % 2. 构造增强特征 (与训练时一致)
+        raw_feat = [Xall(:,n); single(fb)];
+        poly_feat = raw_feat .^ 2;
+        u = [raw_feat; poly_feat]; % 维度翻倍
+        
+        u = double(u);
+        
+        % 3. 单层前向传播
+        h1 = tanhf(W1*u + b1);
+        y_soft = W2*h1 + b2;
         ye_n(n) = y_soft;
-
-        % --- WD (Weighted Decision) 核心逻辑 ---
         
-        % A. 硬判决 (Hard Decision)
+        % 4. WD 逻辑 (beta=0.14)
         y_hard = hard_slice_pam4(y_soft, pam4_levels, thr);
-        
-        % B. 计算可靠性 Gamma
-        % Gamma = 1 - |误差| / 半符号间距
-        % 含义：如果输出非常接近硬判决点，Gamma 接近 1 (可靠)；如果再两个点中间，Gamma 接近 0 (不可靠)。
-        dist_levels = mean(diff(pam4_levels)); % 平均符号间距
-        half_dist = dist_levels / 2;
         abs_err = abs(y_soft - y_hard);
         
-        gamma_n = 1 - abs_err / half_dist; 
-        if gamma_n < 0, gamma_n = 0; end % 截断到 0
+        gamma_n = 1 - abs_err / (dist_levels/2);
+        if gamma_n < 0, gamma_n = 0; end
         
-        % C. 计算加权系数 S(gamma)
-        % 论文公式：通过 sigmoid 函数将 gamma 映射到权值 S
         term = -alpha * (gamma_n/beta - 1);
         S_val = 0.5 * ( (1 - exp(term)) / (1 + exp(term)) + 1 );
         
-        % D. 计算加权反馈值
-        % y_fb = S * y_hard + (1-S) * y_soft
-        % 当 S=1 (非常可靠) 时，反馈硬判决 (消除噪声)
-        % 当 S=0 (非常不可靠) 时，反馈软输出 (保留信息)
-        y_fb_val = S_val * y_hard + (1 - S_val) * y_soft;
-        ye_fb(n) = y_fb_val;
+        ye_fb(n) = S_val * y_hard + (1 - S_val) * y_soft;
     end
     
-    % ===== 8. 去归一化 =====
-    % 将神经网络的输出映射回原始信号的幅度范围
+    %% ===== 8. 输出 =====
     ye_val = ye_n * y_std + y_mean;
-    ye = zeros(length(Tx),1);
+    ye = zeros(length(Tx), 1);
     ye(valid_tx_indices) = ye_val;
-
 end
 
-%% ================= 辅助函数 =================
-
-function [X, Y, tx_idx_out] = build_center_window_dataset(Rx_Data, Tx_Data, InputLength, offset, delay, max_samples)
-% 构建滑动窗口数据集
-% X: [InputLength x N]
-% Y: [1 x N]
+%% Helpers (保持不变)
+function [X, Y, tx_idx_out] = build_center_window_dataset(Rx, Tx, InputLength, offset, delay, max_samples)
     HalfLen = floor(InputLength/2);
-    max_sym_rx = floor((length(Rx_Data) - 1 - offset)/2) + 1;
-    if max_sym_rx < 1, X=[]; Y=[]; tx_idx_out=[]; return; end
-
-    sym_idx = (1:max_sym_rx).';
-    tx_idx  = sym_idx + delay;
-
-    valid_mask = (tx_idx >= 1) & (tx_idx <= length(Tx_Data));
-    sym_idx = sym_idx(valid_mask);
-    tx_idx  = tx_idx(valid_mask);
-
-    if isempty(sym_idx), X=[]; Y=[]; tx_idx_out=[]; return; end
-
-    center = (sym_idx - 1) * 2 + offset;
-    start_i = center - HalfLen;
-    end_i   = center + HalfLen;
-
-    valid2 = (start_i >= 1) & (end_i <= length(Rx_Data));
-    sym_idx = sym_idx(valid2);
-    tx_idx  = tx_idx(valid2);
-    center  = center(valid2);
-
-    if ~isempty(max_samples)
-        keep = min(max_samples, length(sym_idx));
-        sym_idx = sym_idx(1:keep);
-        tx_idx  = tx_idx(1:keep);
-        center  = center(1:keep);
-    end
-
-    N = length(sym_idx);
-    X = zeros(InputLength, N, 'single');
-    for n = 1:N
-        idx = (center(n)-HalfLen) : (center(n)+HalfLen);
-        X(:,n) = single(Rx_Data(idx));
-    end
-    Y = single(Tx_Data(tx_idx)).';
-    tx_idx_out = tx_idx;
+    max_sym = floor((length(Rx)-1-offset)/2)+1;
+    if max_sym<1, X=[];Y=[];tx_idx_out=[]; return; end
+    sym_idx=(1:max_sym).'; tx_idx=sym_idx+delay;
+    mask=(tx_idx>=1)&(tx_idx<=length(Tx));
+    sym_idx=sym_idx(mask); tx_idx=tx_idx(mask);
+    center=(sym_idx-1)*2+offset;
+    valid2=(center-HalfLen>=1)&(center+HalfLen<=length(Rx));
+    sym_idx=sym_idx(valid2); tx_idx=tx_idx(valid2); center=center(valid2);
+    if ~isempty(max_samples), k=min(max_samples,length(sym_idx)); sym_idx=sym_idx(1:k); tx_idx=tx_idx(1:k); center=center(1:k); end
+    N=length(sym_idx); X=zeros(InputLength,N,'single');
+    for n=1:N, X(:,n)=single(Rx(center(n)-HalfLen : center(n)+HalfLen)); end
+    Y=single(Tx(tx_idx)).'; tx_idx_out=tx_idx;
 end
 
 function yq = hard_slice_pam4(y, levels, thr)
-% PAM4 硬判决函数
-    y = double(y);
-    yq = zeros(size(y));
-    yq(y < thr(1)) = levels(1);
-    yq(y >= thr(1) & y < thr(2)) = levels(2);
-    yq(y >= thr(2) & y < thr(3)) = levels(3);
-    yq(y >= thr(3)) = levels(4);
+    y=double(y); yq=zeros(size(y));
+    yq(y<thr(1))=levels(1);
+    yq(y>=thr(1)&y<thr(2))=levels(2);
+    yq(y>=thr(2)&y<thr(3))=levels(3);
+    yq(y>=thr(3))=levels(4);
 end

@@ -84,3 +84,92 @@ File data\rop5dBm_1.mat, Algo FNN, BER = 2.4759e-05
     [AR-RNN] Selected Offset=1, Delay=9, SER=0, Linear MSE=0.01346
     [AR-RNN] Train BER: 1.38e-04 | Delay: 9 | Offset: 1
 File data\rop5dBm_1.mat, Algo RNN, BER = 6.0773e-05
+
+
+
+怎么样，和论文比：>> roll_8_2km
+警告: 名称不存在或不是目录: C:\Users\27456\Desktop\毕业设计\test\200Gbps1km\fns\fns2 
+> 位置：path (第 109 行)
+位置: addpath (第 86 行)
+位置: roll_8_2km (第 8 行) 
+================================================
+Processing File: PS_PAM4_2_RoF_0.1_Cal_45GHz_AWG_210mV_ROP_1.6dBm.mat (ROP=1.6dBm)
+TimingEstimate = 154371
+  [FFE] 0.21s | BER: 1.09e-01
+  [VNLE] 1.03s | BER: 1.07e-01
+  [LE_FFE_DFE] 0.32s | BER: 5.34e-02
+  [DP_VFFE_VDFE] 1.46s | BER: 5.23e-02
+  [CLUT_VDFE] 2.13s | BER: 5.05e-02
+  [FNN] Sync MSE: 0.1376 | Train: 27000 samples | Hidden: 20
+  [FNN] Done in 18.7s | Train BER: 1.23e-01 | Val BER: 1.35e-01
+      -> WARNING: Possible Underfitting. Try larger HiddenSize or more Epochs.
+  [FNN] 18.88s | BER: 1.02e-01
+    [AR-RNN] Selected Offset=1, Delay=0, SER=0.2105, Linear MSE=0.1347
+    [AR-RNN] Train BER: 6.22e-02 | Delay: 0 | Offset: 1
+  [RNN] 28.59s | BER: 5.44e-02
+  [WDRNN] 40.82s | BER: 5.25e-02
+================================================
+Processing File: PS_PAM4_2_RoF_0.1_Cal_45GHz_AWG_210mV_ROP_2.6dBm.mat (ROP=2.6dBm)
+TimingEstimate = 154370
+  [FFE] 0.26s | BER: 9.40e-02
+  [VNLE] 1.26s | BER: 9.21e-02
+  [LE_FFE_DFE] 0.32s | BER: 3.11e-02
+  [DP_VFFE_VDFE] 1.64s | BER: 2.93e-02
+  [CLUT_VDFE] 2.36s | BER: 2.71e-02
+  [FNN] Sync MSE: 0.1215 | Train: 27000 samples | Hidden: 20
+  [FNN] Done in 50.8s | Train BER: 9.88e-02 | Val BER: 1.14e-01
+      -> WARNING: Possible Underfitting. Try larger HiddenSize or more Epochs.
+  [FNN] 51.19s | BER: 8.38e-02
+    [AR-RNN] Selected Offset=1, Delay=-2, SER=0.1885, Linear MSE=0.1261
+    [AR-RNN] Train BER: 3.30e-02 | Delay: -2 | Offset: 1
+  [RNN] 41.57s | BER: 2.72e-02
+  [WDRNN] 41.08s | BER: 2.73e-02
+================================================
+Processing File: PS_PAM4_2_RoF_0.1_Cal_45GHz_AWG_210mV_ROP_3.6dBm.mat (ROP=3.6dBm)
+TimingEstimate = 104983
+  [FFE] 0.23s | BER: 8.24e-02
+  [VNLE] 1.02s | BER: 7.93e-02
+  [LE_FFE_DFE] 0.31s | BER: 1.53e-02
+  [DP_VFFE_VDFE] 1.46s | BER: 1.33e-02
+  [CLUT_VDFE] 2.16s | BER: 1.19e-02
+  [FNN] Sync MSE: 0.1083 | Train: 27000 samples | Hidden: 20
+  [FNN] Done in 36.2s | Train BER: 8.70e-02 | Val BER: 9.03e-02
+      -> WARNING: Possible Underfitting. Try larger HiddenSize or more Epochs.
+  [FNN] 36.37s | BER: 7.21e-02
+    [AR-RNN] Selected Offset=2, Delay=-2, SER=0.1535, Linear MSE=0.1088
+    [AR-RNN] Train BER: 1.55e-02 | Delay: -2 | Offset: 2
+  [RNN] 29.46s | BER: 1.40e-02
+  [WDRNN] 43.69s | BER: 1.36e-02
+================================================
+Processing File: PS_PAM4_2_RoF_0.1_Cal_45GHz_AWG_210mV_ROP_4.6dBm.mat (ROP=4.6dBm)
+TimingEstimate = 154372
+  [FFE] 0.21s | BER: 7.33e-02
+  [VNLE] 1.02s | BER: 6.95e-02
+  [LE_FFE_DFE] 0.30s | BER: 6.63e-03
+  [DP_VFFE_VDFE] 1.50s | BER: 5.87e-03
+  [CLUT_VDFE] 2.31s | BER: 4.97e-03
+  [FNN] Sync MSE: 0.0964 | Train: 27000 samples | Hidden: 20
+  [FNN] Done in 38.7s | Train BER: 6.89e-02 | Val BER: 6.92e-02
+      -> WARNING: Possible Underfitting. Try larger HiddenSize or more Epochs.
+  [FNN] 38.92s | BER: 6.08e-02
+    [AR-RNN] Selected Offset=2, Delay=-2, SER=0.1165, Linear MSE=0.08765
+    [AR-RNN] Train BER: 5.65e-03 | Delay: -2 | Offset: 2
+  [RNN] 29.69s | BER: 6.45e-03
+  [WDRNN] 41.13s | BER: 5.92e-03
+================================================
+Processing File: PS_PAM4_2_RoF_0.1_Cal_45GHz_AWG_210mV_ROP_5.6dBm.mat (ROP=5.6dBm)
+TimingEstimate = 155753
+  [FFE] 0.21s | BER: 6.69e-02
+  [VNLE] 1.02s | BER: 6.28e-02
+  [LE_FFE_DFE] 0.31s | BER: 4.27e-03
+  [DP_VFFE_VDFE] 1.46s | BER: 2.99e-03
+  [CLUT_VDFE] 2.11s | BER: 2.44e-03
+  [FNN] Sync MSE: 0.0910 | Train: 27000 samples | Hidden: 20
+  [FNN] Done in 27.2s | Train BER: 6.11e-02 | Val BER: 6.15e-02
+      -> WARNING: Possible Underfitting. Try larger HiddenSize or more Epochs.
+  [FNN] 27.30s | BER: 5.24e-02
+    [AR-RNN] Selected Offset=1, Delay=-6, SER=0.105, Linear MSE=0.08396
+    [AR-RNN] Train BER: 3.33e-03 | Delay: -6 | Offset: 1
+  [RNN] 29.16s | BER: 2.87e-03
+  [WDRNN] 43.75s | BER: 2.04e-03
+>> 
