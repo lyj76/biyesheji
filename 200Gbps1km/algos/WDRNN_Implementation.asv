@@ -58,7 +58,7 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = WDRNN_Implementa
     Tx_n = (Tx - y_mean) / y_std;
 
 
-
+    
     %% ===== 2. 同步：扫描最佳 Delay 和 Offset (线性探测法) =====
     % 使用简单的线性回归 (Ridge Regression) 快速找到最佳对齐位置
     best_ser = inf;
@@ -167,7 +167,7 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = WDRNN_Implementa
     net = trainNetwork(X_Train, Y_Train, layers, options);
 
     %% ===== 7. 推理 (Inference) 与 加权反馈 (WD) =====
-    
+    % 这里必须手动实现前向传播，因为我们需要在每一步动态计算加权反馈并喂给下一步
     
     % 提取网络权重
     L = net.Layers;
