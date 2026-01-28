@@ -163,52 +163,77 @@ for n1 = 1:length(file_list)
     end
 end
 
-%% Plot: BER vs ROP (dBm) - Modified for Semilog Y-Axis
-figure('Name', 'BER vs ROP (2km)');
-% Color Palette & Markers
+%% Plot: BER vs ROP (dBm) - Publication Quality Standard
+figure('Name', 'BER vs ROP (2km)', 'Color', 'w'); % 背景设为白色
+
+% 1. 颜色与标记 (IEEE 标准色序)
 colors = [
-    0 0.4470 0.7410;      % 1:FFE (Blue)
-    0.8500 0.3250 0.0980; % 2:VNLE (Red)
-    0.9290 0.6940 0.1250; % 3:DFE (Yellow)
-    0.4940 0.1840 0.5560; % 4:VDFE (Purple)
-    0.4660 0.6740 0.1880; % 5:CLUT (Green)
-    0.3010 0.7450 0.9330; % 6:FNN (Cyan)
-    0.5 0.5 0.5;          % 7:RNN (Gray - AR)
-    0 0 0                 % 8:WDRNN (Black - WD)
+    0 0.4470 0.7410;      % Blue
+    0.8500 0.3250 0.0980; % Red
+    0.9290 0.6940 0.1250; % Yellow
+    0.4940 0.1840 0.5560; % Purple
+    0.4660 0.6740 0.1880; % Green
+    0.3010 0.7450 0.9330; % Cyan
+    0.6350 0.0780 0.1840; % Dark Red
+    0 0 0                 % Black
 ];
-markers = {'o-', 's-', 'd-', '^-', 'v-', '>-', 'p-', 'h-'};
-mk_size = 8;
+markers = {'o', 's', 'd', '^', 'v', '>', '<', 'h'}; % 移除线型，只定义Marker
+line_styles = {'-', '-', '-', '-', '-', '-', '--', '-'}; % 单独定义线型
+
+mk_size = 7;
+line_width = 1.5;
+
 h_plots = gobjects(length(algo_list), 1);
-min_ber_floor = 1e-7; % 防止 BER=0 时无法画图
+min_ber_limit = 1e-6; % Y轴底限
 
 hold on;
 for a = 1:length(algo_list)
     y_data = BERall(:, a);
-    % 处理 BER=0 的情况，防止 semilogy 报错或线条断裂
-    y_data(y_data < min_ber_floor) = min_ber_floor; 
     
-    % --- 关键修改：使用 semilogy，并且直接传入原始 BER (不要 log10) ---
-    h_plots(a) = semilogy(rop_dBm, y_data, markers{a}, ...
-        'Color', colors(a,:), 'LineWidth', 1.5, ...
-        'MarkerSize', mk_size, 'MarkerFaceColor', colors(a,:));
+    % --- 标准处理技巧：BER=0 的点设为 NaN ---
+    % 这样 semilogy 会自动断开线条，表示"无误码"或"超出测量范围"
+    % 如果你想画到底板上，保持你原来的做法也可以，但 NaN 更严谨。
+    y_data(y_data == 0) = NaN; 
+    
+    % 绘图
+    h_plots(a) = semilogy(rop_dBm, y_data, ...
+        'LineStyle', line_styles{mod(a-1,8)+1}, ...
+        'Marker', markers{mod(a-1,8)+1}, ...
+        'Color', colors(mod(a-1,8)+1,:), ...
+        'LineWidth', line_width, ...
+        'MarkerSize', mk_size, ...
+        'MarkerFaceColor', 'w'); % Marker 内部填充白色，这在密集图中更清晰
 end
 
-% Limits Lines (FEC 门限)
-% --- 关键修改：yline 使用原始数值，不要 log10 ---
-yline(3.8e-3, '--k', 'HD-FEC (3.8e-3)', 'LineWidth', 1.2, 'FontSize', 10, 'LabelHorizontalAlignment', 'left');
-yline(2.4e-2, ':k', 'SD-FEC (2.4e-2)', 'LineWidth', 1.2, 'FontSize', 10, 'LabelHorizontalAlignment', 'left');
+% 2. FEC Thresholds (使用 LaTeX 标注)
+yline(3.8e-3, '--k', 'HD-FEC ($3.8\times 10^{-3}$)', ...
+    'LineWidth', 1.0, 'LabelHorizontalAlignment', 'left', 'Interpreter', 'latex', 'FontSize', 10);
+yline(2.4e-2, ':k', 'SD-FEC ($2.4\times 10^{-2}$)', ...
+    'LineWidth', 1.0, 'LabelHorizontalAlignment', 'left', 'Interpreter', 'latex', 'FontSize', 10);
 
-grid on;
-grid minor; % 开启次网格，对数坐标下非常重要
-xlabel('Received Optical Power (dBm)', 'FontSize', 12, 'FontName', 'Arial');
-ylabel('BER (Log Scale)', 'FontSize', 12, 'FontName', 'Arial'); 
-title('BER Performance vs ROP (200Gbps 2km)', 'FontSize', 14, 'FontName', 'Arial');
-legend(h_plots, algo_list, 'Location', 'southwest', 'FontSize', 10, 'Interpreter', 'none');
+% 3. 坐标轴美化 (核心部分)
+grid on; grid minor;
 
-% 设置 Y 轴范围 (直接使用 10 的幂次)
-ylim([1e-5, 1]); 
-% 设置 Y 轴刻度显示模式，确保看起来是 10^-x
-set(gca, 'YScale', 'log'); 
+% 设置坐标轴标签 (LaTeX)
+xlabel('Received Optical Power (dBm)', 'FontSize', 12, 'Interpreter', 'latex');
+ylabel('Bit Error Rate (BER)', 'FontSize', 12, 'Interpreter', 'latex');
+title('\textbf{BER Performance vs ROP (200Gbps 2km)}', 'FontSize', 13, 'Interpreter', 'latex');
+
+% 设置 Legend
+lgd = legend(h_plots, algo_list, 'Location', 'southwest', 'FontSize', 9, 'Interpreter', 'none');
+lgd.ItemTokenSize = [20, 18]; % 缩短图例中的线长，更紧凑
+
+% 4. 强制设置对数刻度 (防止出现非 10^n 的刻度)
+set(gca, 'YScale', 'log');
+ylim([min_ber_limit, 1]); 
+
+% 手动设置 Y 轴刻度，确保只显示 10 的幂次方 (10^-1, 10^-2...)
+yticks_vals = 10.^(-6:0); 
+set(gca, 'YTick', yticks_vals);
+
+% 设置字体 (Times New Roman 是 IEEE 论文标准)
+set(gca, 'FontName', 'Times New Roman', 'FontSize', 11);
+set(gca, 'LineWidth', 1.0); % 坐标轴线框变粗一点点
 
 box on;
 hold off;
