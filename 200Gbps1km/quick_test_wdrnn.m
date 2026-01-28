@@ -42,9 +42,9 @@ x_shape = conv(sqrt_ht, x_upsamp);
 %% Data List (First 3 points: 1.6, 2.6, 3.6 dBm)
 base_path = 'C:\Users\27456\Desktop\毕业设计';
 file_names = { ...
-    'PS_PAM4_2_RoF_0.1_Cal_45GHz_AWG_210mV_ROP_1.6dBm.mat', ...
-    'PS_PAM4_2_RoF_0.1_Cal_45GHz_AWG_210mV_ROP_2.6dBm.mat', ...
-    'PS_PAM4_2_RoF_0.1_Cal_45GHz_AWG_210mV_ROP_3.6dBm.mat' ...
+    'PS_PAM4_2_RoF_0.1_Cal_45GHz_AWG_210mV_ROP_3.6dBm.mat', ...
+    'PS_PAM4_2_RoF_0.1_Cal_45GHz_AWG_210mV_ROP_4.6dBm.mat', ...
+    'PS_PAM4_2_RoF_0.1_Cal_45GHz_AWG_210mV_ROP_5.6dBm.mat' ...
 };
 rop_dBm = [1.6, 2.6, 3.6];
 
@@ -70,6 +70,10 @@ disp('================================================');
 for n1 = 1:length(file_names)
     fname = file_names{n1};
     fpath = fullfile(base_path, fname);
+    
+    % Reset seed for each file to ensure consistency with roll8 loop
+    s_loop = RandStream.create('mt19937ar', 'seed', 529551);
+    RandStream.setGlobalStream(s_loop);
     
     fprintf('Processing: %s (ROP=%.1fdBm)\n', fname, rop_dBm(n1));
     

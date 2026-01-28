@@ -21,7 +21,7 @@ function [ye, net, valid_tx_indices, best_delay, best_offset] = WDRNN_Implementa
 
     % WD 参数 (回归论文原值，高SNR下更准)
     alpha = 5;      
-    beta = 0.14;    
+    beta = 0.06;    
 
     %% ===== 1. 预处理 =====
     Rx = xRx(:); Tx = xTx(:);

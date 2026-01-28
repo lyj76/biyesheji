@@ -71,16 +71,16 @@ params.scale = M/2;
 
 % NN Parameters (Paper Aligned)
 params.FNN_InputLength = 61;
-params.FNN_HiddenSize = 20;   % Paper: 20
+params.FNN_HiddenSize = 32;   % Paper: 20
 params.FNN_LR = 0.001;
 params.FNN_Epochs = 50; 
 params.FNN_DelayCandidates = -20:20;
 params.FNN_OffsetCandidates = [1 2];
 
 params.RNN_InputLength = 61;
-params.RNN_HiddenSize = 22;   % Paper: 20
+params.RNN_HiddenSize = 32;   % Paper: 20
 params.RNN_LR = 0.001;
-params.RNN_Epochs = 50;       % Optimized: 50
+params.RNN_Epochs = 60;       % Optimized: 50
 params.RNN_k = 25; 
 params.RNN_DelayCandidates = -20:20;
 params.RNN_OffsetCandidates = [1 2];
@@ -139,6 +139,11 @@ for n1 = 1:length(file_list)
 
     for a = 1:length(algo_list)
         algo_id = algo_list{a};
+        
+        % Reset seed to ensure each algorithm starts with the same RNG state
+        % This prevents "random seed contamination" from previous algorithms (e.g. FNN/RNN)
+        s_loop = RandStream.create('mt19937ar', 'seed', 529551);
+        RandStream.setGlobalStream(s_loop);
         
         % Training Length
         if ismember(upper(algo_id), {'FNN', 'RNN', 'WDRNN'})
